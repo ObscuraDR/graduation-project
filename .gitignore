@@ -69,3 +69,6 @@ htmlcov/
 
 # Docker
 .dockerignore
+
+# Markdown files
+*.md
