@@ -1,0 +1,29 @@
+{
+  "feature_names": [
+    "flow_duration",
+    "total_fwd_packets",
+    "total_bwd_packets",
+    "total_fwd_bytes",
+    "total_bwd_bytes",
+    "avg_packet_size",
+    "packet_rate",
+    "byte_rate",
+    "syn_count",
+    "fin_count",
+    "rst_count",
+    "psh_count",
+    "ack_count",
+    "unique_dst_ports",
+    "inter_arrival_time_mean",
+    "fwd_packet_rate",
+    "bwd_packet_rate",
+    "fwd_byte_rate",
+    "bwd_byte_rate",
+    "packet_length_mean"
+  ],
+  "n_features": 20,
+  "description": "Fixed feature order for ML model inference (must match feature_extractor.py)",
+  "version": "1.0",
+  "trained_with": "ensemble",
+  "trained_date": "2026-05-20T18:26:09.718653"
+}

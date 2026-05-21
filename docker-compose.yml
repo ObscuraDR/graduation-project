@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  # IDS Backend API
+  ids-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ids-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
+      - ./models:/app/models
+      - ./logs:/app/logs
+      - ./data:/app/data
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=ids_db
+      - POSTGRES_USER=ids_user
+      - POSTGRES_PASSWORD=ids_password
+      - MONGO_URI=mongodb://ids_mongo_user:ids_mongo_pass@mongodb:27017/ids_logs?authSource=admin
+      - MONGO_DB=ids_logs
+      - REDIS_URL=redis://:ids_redis_pass@redis:6379/0
+    networks:
+      - ids-network
+    depends_on:
+      - postgres
+      - mongodb
+      - redis
+    restart: unless-stopped
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    privileged: true
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:14-alpine
+    container_name: ids-postgres
+    environment:
+      POSTGRES_DB: ids_db
+      POSTGRES_USER: ids_user
+      POSTGRES_PASSWORD: ids_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - ids-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ids_user -d ids_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB for logs
+  mongodb:
+    image: mongo:6-alpine
+    container_name: ids-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ids_mongo_user
+      MONGO_INITDB_ROOT_PASSWORD: ids_mongo_pass
+      MONGO_INITDB_DATABASE: ids_logs
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+    networks:
+      - ids-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--username", "ids_mongo_user", "--password", "ids_mongo_pass", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: ids-redis
+    command: redis-server --requirepass ids_redis_pass --appendonly yes
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - ids-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "ids_redis_pass", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Nginx reverse proxy (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: ids-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - ids-network
+    depends_on:
+      - ids-backend
+    restart: unless-stopped
+
+networks:
+  ids-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  mongo-data:
+  redis-data:
