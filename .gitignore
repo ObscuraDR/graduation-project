@@ -70,6 +70,3 @@ reports/*.json
 .qodo/
 .sixth/
 .llm-chat-history/
-
-# ─── Documentation ────────────────────────────────────────────────────────
-docs/
