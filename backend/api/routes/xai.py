@@ -59,8 +59,8 @@ xai_router = APIRouter()
 # Paths (project-root-relative; same as ModelLoader defaults)
 # ---------------------------------------------------------------------------
 
-_FEATURES_JSON = Path("./models/features.json")
-_MODELS_DIR = Path("./models")
+_FEATURES_JSON = Path("./backend/models/features.json")
+_MODELS_DIR = Path("./backend/models")
 
 # Cache the feature set for fast validation (populated on first request)
 _EXPECTED_FEATURES: set[str] | None = None

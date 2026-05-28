@@ -138,3 +138,115 @@ def test_alert_manager_stats_incremented(alert_manager: AlertManager) -> None:
         _make_flow_info(src_ip="10.1.2.3"),
     )
     assert alert_manager.total_alerts == before + 1
+
+
+# ---------------------------------------------------------------------------
+# Severity escalation & correlation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_severity_escalated_after_repeated_attacks() -> None:
+    """
+    5+ attacks from the same IP within correlation_window escalate
+    low/medium severity to high, and high to critical.
+    Source: _apply_correlation() – total_recent >= 5 branch.
+    """
+    mgr = AlertManager(
+        confidence_threshold=0.75,
+        alert_cooldown=0,
+        correlation_window=60,
+        enable_db_save=False,
+        enable_websocket=False,
+        enable_email=False,
+    )
+
+    src_ip = "10.5.5.5"
+    # Generate 5 alerts with medium severity to fill attack_patterns
+    for i in range(5):
+        flow = _make_flow_info(src_ip=src_ip)
+        flow["flow_key"] = f"{src_ip}:1000{i}-192.168.1.1:80"
+        mgr.generate_alert(_make_prediction(severity="medium"), flow)
+
+    # 6th alert: severity should be escalated from medium → high
+    flow6 = _make_flow_info(src_ip=src_ip)
+    flow6["flow_key"] = f"{src_ip}:20000-192.168.1.1:80"
+    alert = mgr.generate_alert(_make_prediction(severity="medium"), flow6)
+
+    assert alert is not None
+    assert alert["severity"] in ("high", "critical"), (
+        f"Expected escalated severity, got {alert['severity']}"
+    )
+    assert alert["correlated"] is True, "Alert should be marked as correlated"
+
+
+@pytest.mark.unit
+def test_severity_not_escalated_below_threshold() -> None:
+    """
+    Fewer than 5 attacks from the same IP should NOT escalate severity.
+    """
+    mgr = AlertManager(
+        confidence_threshold=0.75,
+        alert_cooldown=0,
+        correlation_window=60,
+        enable_db_save=False,
+        enable_websocket=False,
+        enable_email=False,
+    )
+
+    src_ip = "10.6.6.6"
+    # Only 2 prior alerts — below the escalation threshold of 5
+    # Use non-DDoS/PortScan attack type to avoid type-specific escalation rules
+    for i in range(2):
+        flow = _make_flow_info(src_ip=src_ip)
+        flow["flow_key"] = f"{src_ip}:3000{i}-192.168.1.1:80"
+        mgr.generate_alert(
+            _make_prediction(attack_type="BruteForce", severity="low"),
+            flow,
+        )
+
+    flow3 = _make_flow_info(src_ip=src_ip)
+    flow3["flow_key"] = f"{src_ip}:40000-192.168.1.1:80"
+    alert = mgr.generate_alert(
+        _make_prediction(attack_type="BruteForce", severity="low"),
+        flow3,
+    )
+
+    assert alert is not None
+    assert alert["severity"] == "low", (
+        f"Severity should remain 'low' with only 2 prior attacks, got {alert['severity']}"
+    )
+    assert alert["correlated"] is False
+
+
+@pytest.mark.unit
+def test_ddos_correlation_escalates_to_critical() -> None:
+    """
+    DDoS attack with 2+ prior DDoS alerts from same IP escalates to critical.
+    Source: _apply_correlation() – DDoS branch (total_recent >= 2).
+    """
+    mgr = AlertManager(
+        confidence_threshold=0.75,
+        alert_cooldown=0,
+        correlation_window=60,
+        enable_db_save=False,
+        enable_websocket=False,
+        enable_email=False,
+    )
+
+    src_ip = "10.7.7.7"
+    # 2 prior DDoS alerts
+    for i in range(2):
+        flow = _make_flow_info(src_ip=src_ip)
+        flow["flow_key"] = f"{src_ip}:5000{i}-192.168.1.1:80"
+        mgr.generate_alert(_make_prediction(attack_type="DDoS", severity="high"), flow)
+
+    # 3rd DDoS alert should be escalated to critical
+    flow3 = _make_flow_info(src_ip=src_ip)
+    flow3["flow_key"] = f"{src_ip}:60000-192.168.1.1:80"
+    alert = mgr.generate_alert(_make_prediction(attack_type="DDoS", severity="high"), flow3)
+
+    assert alert is not None
+    assert alert["severity"] == "critical", (
+        f"DDoS with 2+ prior alerts should escalate to critical, got {alert['severity']}"
+    )
+    assert alert["correlated"] is True

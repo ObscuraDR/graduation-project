@@ -1,9 +1,0 @@
-Flow Duration,Total Fwd Packets,Total Backward Packets,Total Length of Fwd Packets,Total Length of Bwd Packets,Flow Packets/s,Flow Bytes/s,Flow IAT Mean,Fwd Packet Length Mean,SYN Flag Count,FIN Flag Count,RST Flag Count,PSH Flag Count,ACK Flag Count,Label
-1000,10,5,100,50,15,150,100,10,1,0,0,2,5,BENIGN
-2000,20,10,200,100,15,150,100,10,0,1,0,2,5,DDoS
-3000,30,15,300,150,15,150,100,10,1,0,0,2,5,PortScan
-4000,40,20,400,200,15,150,100,10,0,1,0,2,5,Bot
-1000,10,5,100,50,15,150,100,10,1,0,0,2,5,BENIGN
-2000,20,10,200,100,15,150,100,10,0,1,0,2,5,DDoS
-3000,30,15,300,150,15,150,100,10,1,0,0,2,5,PortScan
-4000,40,20,400,200,15,150,100,10,0,1,0,2,5,Bot

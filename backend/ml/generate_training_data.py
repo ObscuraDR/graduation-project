@@ -153,7 +153,7 @@ def generate_synthetic_data(n_samples=10000):
 
 if __name__ == "__main__":
     # Create data directory
-    data_dir = Path("./data")
+    data_dir = Path("./backend/data")
     data_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate synthetic data

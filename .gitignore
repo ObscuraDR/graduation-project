@@ -1,74 +1,75 @@
-# Python
+# ─── Python ────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
+.installed.cfg
 
-# Virtual Environment
+# ─── Virtual Environment ──────────────────────────────────────────────────
 venv/
 env/
-ENV/
-.venv
+.venv/
 
-# IDE
+# ─── IDE / Editor ─────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# Environment Variables
+# ─── Environment Variables ────────────────────────────────────────────────
 .env
 .env.local
+.env.production
 
-# Logs
+# ─── Logs ─────────────────────────────────────────────────────────────────
 logs/
 *.log
 
-# Database
+# ─── Database ─────────────────────────────────────────────────────────────
 *.db
 *.sqlite
 *.sqlite3
 
-# Models
+# ─── ML Models (generated, not committed) ─────────────────────────────────
 models/*.pkl
 models/*.h5
 models/*.joblib
 !models/.gitkeep
+!models/features.json
 
-# Data
+# ─── Data (raw/processed datasets) ────────────────────────────────────────
 data/raw/
 data/processed/
+data/*.csv
 !data/.gitkeep
 
-# OS
+# ─── OS ───────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# Testing
+# ─── Testing ──────────────────────────────────────────────────────────────
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
 
-# Docker
-.dockerignore
+# ─── Frontend ─────────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
 
-# Markdown files
-*.md
+# ─── Reports (generated) ──────────────────────────────────────────────────
+reports/*.json
+
+# ─── Tool configs (not needed in repo) ────────────────────────────────────
+.qodo/
+.sixth/
+.llm-chat-history/
+
+# ─── Documentation ────────────────────────────────────────────────────────
+docs/

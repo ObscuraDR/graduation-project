@@ -37,8 +37,8 @@ _EXPLAINER_CACHE: Dict[str, shap.TreeExplainer] = {}
 _FEATURE_ORDER_CACHE: Optional[List[str]] = None
 
 # Default features.json location (relative to project root)
-_DEFAULT_FEATURES_JSON = Path("./models/features.json")
-_DEFAULT_MODELS_DIR = Path("./models")
+_DEFAULT_FEATURES_JSON = Path("./backend/models/features.json")
+_DEFAULT_MODELS_DIR = Path("./backend/models")
 
 
 # ---------------------------------------------------------------------------

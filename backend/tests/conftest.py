@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-# ── project root (two levels up from backend/tests/) ──────────────────────────
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# ── backend root (one level up from backend/tests/) ──────────────────────────
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODELS_DIR = PROJECT_ROOT / "models"
 FEATURES_JSON = MODELS_DIR / "features.json"
 

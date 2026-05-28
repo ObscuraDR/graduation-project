@@ -22,7 +22,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MODEL_DIR = Path("./models")
+MODEL_DIR = Path("./backend/models")
 FEATURES_JSON = MODEL_DIR / "features.json"
 MODEL_NAME = "ensemble"
 

@@ -10,8 +10,14 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture()
 def client():
-    from backend.main import app
-    return TestClient(app, raise_server_exceptions=False)
+    from unittest.mock import AsyncMock, patch
+    from backend.api.websocket import AlertBroadcastBridge
+    with patch("backend.database.connection.init_db", return_value=None), \
+         patch.object(AlertBroadcastBridge, "start", new=AsyncMock(return_value=None)), \
+         patch.object(AlertBroadcastBridge, "stop", new=AsyncMock(return_value=None)):
+        from backend.main import app
+        with TestClient(app, raise_server_exceptions=False) as c:
+            yield c
 
 
 def _engine_mock(ok: bool):

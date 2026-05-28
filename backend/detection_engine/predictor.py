@@ -29,7 +29,7 @@ class Predictor:
         model_loader: Optional[ModelLoader] = None,
         feature_extractor: Optional[FeatureExtractor] = None,
         confidence_threshold: float = 0.75,
-        features_path: str = "./models/features.json"
+        features_path: str = "./backend/models/features.json"
     ):
         """
         Initialize predictor

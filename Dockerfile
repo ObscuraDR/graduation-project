@@ -19,10 +19,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY backend/ ./backend/
-COPY .env.example .env
 
 # Create necessary directories
-RUN mkdir -p models logs data
+RUN mkdir -p backend/models backend/data backend/reports logs
 
 # Expose port
 EXPOSE 8000

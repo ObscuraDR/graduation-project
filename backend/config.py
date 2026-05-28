@@ -115,11 +115,11 @@ class Settings(BaseSettings):
     alert_threshold_medium: float = 0.5
     
     # Model Paths
-    model_dir: str = "./models"
-    rf_model_path: str = "./models/random_forest.pkl"
-    xgb_model_path: str = "./models/xgboost.pkl"
-    lstm_model_path: str = "./models/lstm.pkl"
-    ensemble_model_path: str = "./models/ensemble.pkl"
+    model_dir: str = "./backend/models"
+    rf_model_path: str = "./backend/models/random_forest.pkl"
+    xgb_model_path: str = "./backend/models/xgboost.pkl"
+    lstm_model_path: str = "./backend/models/lstm.pkl"
+    ensemble_model_path: str = "./backend/models/ensemble.pkl"
     
     # Pipeline / flow inference
     min_packets: int = 10

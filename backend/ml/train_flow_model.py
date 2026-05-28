@@ -66,7 +66,7 @@ class FlowModelTrainer:
         self.random_state = random_state
         
         # Load feature contract
-        self.feature_contract_path = Path(__file__).parent.parent.parent / "models" / "features.json"
+        self.feature_contract_path = Path(__file__).parent.parent / "models" / "features.json"
         self.feature_names = self._load_feature_contract()
         
         # Model and preprocessing objects
@@ -346,7 +346,7 @@ class FlowModelTrainer:
         logger.info(f"\n{classification_report(y_test_decoded, y_pred_decoded)}")
         logger.info(f"{'='*60}\n")
     
-    def save_artifacts(self, output_dir: str = "./models"):
+    def save_artifacts(self, output_dir: str = "./backend/models"):
         """
         Save model artifacts compatible with model_loader
         
@@ -387,7 +387,7 @@ class FlowModelTrainer:
             json.dump(features_contract, f, indent=2)
         logger.info(f"Updated features.json at {features_path}")
     
-    def save_training_report(self, output_dir: str = "./reports"):
+    def save_training_report(self, output_dir: str = "./backend/reports"):
         """
         Save training report to JSON
         
@@ -430,7 +430,7 @@ class FlowModelTrainer:
         
         logger.info(f"Saved training report to {report_path}")
     
-    def run(self, output_dir: str = "./models"):
+    def run(self, output_dir: str = "./backend/models"):
         """
         Run complete training pipeline
         
@@ -531,8 +531,8 @@ Examples:
     parser.add_argument(
         '--output-dir',
         type=str,
-        default='./models',
-        help='Output directory for artifacts (default: ./models)'
+        default='./backend/models',
+        help='Output directory for artifacts (default: ./backend/models)'
     )
     
     args = parser.parse_args()

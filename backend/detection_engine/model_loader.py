@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class ModelLoader:
     """Load and manage ML model artifacts"""
     
-    def __init__(self, model_dir: str = "./models"):
+    def __init__(self, model_dir: str = "./backend/models"):
         """
         Initialize model loader
         
@@ -208,7 +208,7 @@ class ModelLoader:
 _model_loader_instance: Optional[ModelLoader] = None
 
 
-def get_model_loader(model_dir: str = "./models") -> ModelLoader:
+def get_model_loader(model_dir: str = "./backend/models") -> ModelLoader:
     """
     Get or create model loader instance
     

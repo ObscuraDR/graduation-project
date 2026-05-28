@@ -543,3 +543,29 @@ async def get_system_stats(db: Session = Depends(get_db)):
         "whitelist_count": db.query(Whitelist).count(),
         "model_count": db.query(Model).count(),
     }
+
+
+@stats_router.get("/training-report")
+async def get_training_report():
+    """
+    GET /api/stats/training-report — Trả về training metrics từ
+    backend/reports/cicids2017_training_report.json (nếu tồn tại).
+    """
+    import json
+    from pathlib import Path
+
+    report_path = Path("backend/reports/cicids2017_training_report.json")
+    if not report_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Training report not found. Run: python backend/scripts/generate_and_train.py",
+        )
+
+    try:
+        with open(report_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to load training report: {e}",
+        ) from e
