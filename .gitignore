@@ -48,6 +48,7 @@ data/raw/
 data/processed/
 data/*.csv
 !data/.gitkeep
+backend/data/cicids2017/
 
 # ─── OS ───────────────────────────────────────────────────────────────────
 .DS_Store
