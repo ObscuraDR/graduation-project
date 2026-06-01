@@ -1,6 +1,9 @@
-import { Outlet, NavLink } from 'react-router-dom'
-import { Shield, AlertTriangle, Activity, Brain, Settings, Network } from 'lucide-react'
+import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Shield, AlertTriangle, Activity, Brain, Settings, Network, LogOut } from 'lucide-react'
 import clsx from 'clsx'
+import ErrorBoundary from './ErrorBoundary'
+import { getUser, clearAuth } from '../lib/auth'
+import { disconnectWebSocket } from '../lib/websocket'
 
 const navItems = [
   { to: '/', icon: Activity, label: 'Overview' },
@@ -12,6 +15,15 @@ const navItems = [
 ]
 
 export default function Layout() {
+  const navigate = useNavigate()
+  const user = getUser()
+
+  function handleLogout() {
+    disconnectWebSocket()
+    clearAuth()
+    navigate('/login', { replace: true })
+  }
+
   return (
     <div className="flex h-screen">
       {/* Sidebar */}
@@ -45,14 +57,29 @@ export default function Layout() {
           ))}
         </nav>
 
-        <div className="p-4 border-t border-gray-700 text-xs text-gray-500">
-          Z-Sentinel IDS v1.0.0
+        <div className="p-4 border-t border-gray-700">
+          {user && (
+            <div className="mb-3">
+              <p className="text-sm font-medium text-white truncate">{user.username}</p>
+              <p className="text-xs text-gray-500 capitalize">{user.role}</p>
+            </div>
+          )}
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Đăng xuất
+          </button>
+          <p className="text-xs text-gray-600 mt-3">Z-Sentinel IDS v1.0.0</p>
         </div>
       </aside>
 
       {/* Main content */}
       <main className="flex-1 overflow-auto bg-gray-50">
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </main>
     </div>
   )

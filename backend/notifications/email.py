@@ -168,6 +168,8 @@ class EmailNotificationService:
         )
         # ip → datetime of last email sent
         self._email_history: Dict[str, datetime] = {}
+        # Main event loop reference (set qua set_event_loop() từ lifespan)
+        self._loop = None
 
     # ------------------------------------------------------------------
     # Cooldown helpers
@@ -286,6 +288,12 @@ class EmailNotificationService:
 
         This is the **only** method callers should use from inside the
         broadcast-bridge consumer coroutine.  It never raises.
+
+        Thread/loop safety:
+        - Khi gọi từ trong async context (event loop đang chạy) → tạo task ngay.
+        - Khi gọi từ sync context / thread khác (không có running loop) →
+          dùng loop reference đã lưu (nếu có) qua call_soon_threadsafe,
+          hoặc log warning nếu không có loop nào.
         """
         if not self.should_send_email(alert):
             return
@@ -299,11 +307,33 @@ class EmailNotificationService:
                 # Roll back cooldown so it can retry on the next event
                 self._email_history.pop(src_ip, None)
 
+        # Trường hợp 1: đang ở trong running event loop (async context)
         try:
-            asyncio.get_event_loop().create_task(_send())
+            loop = asyncio.get_running_loop()
+            loop.create_task(_send())
+            return
         except RuntimeError:
-            # No running event loop (e.g. called from sync context in tests)
-            logger.warning("No event loop running; email not dispatched for %s", src_ip)
+            pass  # Không có running loop trong thread hiện tại
+
+        # Trường hợp 2: có loop reference đã lưu (set qua set_event_loop)
+        if self._loop is not None and not self._loop.is_closed():
+            try:
+                self._loop.call_soon_threadsafe(lambda: self._loop.create_task(_send()))
+                return
+            except RuntimeError:
+                pass
+
+        # Trường hợp 3: không có loop nào → rollback cooldown, log warning
+        self._email_history.pop(src_ip, None)
+        logger.warning("No event loop available; email not dispatched for %s", src_ip)
+
+    def set_event_loop(self, loop) -> None:
+        """
+        Lưu reference đến main event loop để dispatch email an toàn từ
+        thread khác (ví dụ sniffer thread). Gọi từ FastAPI lifespan startup.
+        """
+        self._loop = loop
+        logger.info("Email service event loop reference set")
 
 
 # ---------------------------------------------------------------------------

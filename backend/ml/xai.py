@@ -227,19 +227,38 @@ def explain(
     raw_shap = explainer.shap_values(x_scaled)
     logger.debug("SHAP values computed in %.3fs", time.perf_counter() - t0)
 
-    # raw_shap: list[n_classes] of shape (1, n_features)  or  (1, n_features)
-    if isinstance(raw_shap, list):
-        # Multi-class RF → use the predicted class slice
-        shap_for_pred = np.array(raw_shap[predicted_idx][0])
-    else:
-        shap_for_pred = np.array(raw_shap[0])
+    # SHAP output format khác nhau giữa các versions:
+    # - SHAP cũ (multi-class): list[n_classes] of (n_samples, n_features)
+    # - SHAP mới (>=0.45, multi-class): np.ndarray shape (n_samples, n_features, n_classes)
+    # - Binary/single: np.ndarray shape (n_samples, n_features)
+    n_features = len(feature_order)
 
-    # base_value: scalar or per-class array
-    ev = explainer.expected_value
-    if isinstance(ev, (list, np.ndarray)):
-        base_value = float(ev[predicted_idx])
+    if isinstance(raw_shap, list):
+        # Format cũ: list theo class
+        idx = predicted_idx if predicted_idx < len(raw_shap) else 0
+        shap_for_pred = np.asarray(raw_shap[idx][0], dtype=np.float64).ravel()
     else:
-        base_value = float(ev)
+        arr = np.asarray(raw_shap, dtype=np.float64)
+        if arr.ndim == 3:
+            # (n_samples, n_features, n_classes) → lấy sample 0, class predicted
+            cls = predicted_idx if predicted_idx < arr.shape[2] else 0
+            shap_for_pred = arr[0, :, cls].ravel()
+        elif arr.ndim == 2:
+            # (n_samples, n_features)
+            shap_for_pred = arr[0].ravel()
+        else:
+            shap_for_pred = arr.ravel()
+
+    # Đảm bảo đúng độ dài feature
+    shap_for_pred = np.asarray(shap_for_pred, dtype=np.float64).ravel()[:n_features]
+
+    # base_value: scalar hoặc per-class array
+    ev = explainer.expected_value
+    ev_arr = np.atleast_1d(np.asarray(ev, dtype=np.float64))
+    if ev_arr.size > 1:
+        base_value = float(ev_arr[predicted_idx] if predicted_idx < ev_arr.size else ev_arr[0])
+    else:
+        base_value = float(ev_arr[0])
 
     # ── Assemble response payload ─────────────────────────────────────────────
     shap_dict = {

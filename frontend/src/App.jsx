@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Layout from './components/Layout'
+import RequireAuth from './components/RequireAuth'
+import Login from './pages/Login'
 import Overview from './pages/Overview'
 import Alerts from './pages/Alerts'
 import Traffic from './pages/Traffic'
@@ -11,7 +13,15 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Layout />}>
+        <Route path="/login" element={<Login />} />
+        <Route
+          path="/"
+          element={
+            <RequireAuth>
+              <Layout />
+            </RequireAuth>
+          }
+        >
           <Route index element={<Overview />} />
           <Route path="alerts" element={<Alerts />} />
           <Route path="traffic" element={<Traffic />} />

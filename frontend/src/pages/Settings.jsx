@@ -101,7 +101,7 @@ export default function Settings() {
             Save
           </button>
         </div>
-        <p className="text-xs text-gray-400 mt-2">Stored in browser localStorage. Required for sniffer control.</p>
+        <p className="text-xs text-gray-400 mt-2">Stored in browser localStorage. Required for sniffer control. Default: <code className="bg-gray-100 px-1 rounded">supersecretkey</code></p>
       </div>
 
       {/* Service Health */}

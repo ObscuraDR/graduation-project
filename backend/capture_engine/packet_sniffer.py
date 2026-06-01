@@ -309,15 +309,25 @@ def get_sniffer(
         PacketSniffer instance
     """
     global _sniffer_instance
-    
-    if _sniffer_instance is None:
-        _sniffer_instance = PacketSniffer(
-            interface=interface,
-            packet_queue=packet_queue,
-            callback=callback,
-            filter_expr=filter_expr,
-            dry_run=dry_run,
-            dry_run_duration=dry_run_duration
+
+    # Nếu đã có instance đang chạy → trả về nó (không cho đổi config khi đang capture)
+    if _sniffer_instance is not None and _sniffer_instance.is_running:
+        logger.warning(
+            "Sniffer đang chạy trên interface '%s'; bỏ qua request đổi config",
+            _sniffer_instance.interface,
         )
-    
+        return _sniffer_instance
+
+    # Nếu chưa có instance HOẶC instance cũ đã dừng → tạo mới với params hiện tại.
+    # Điều này fix bug singleton reuse: trước đây start lần 2 với interface khác
+    # vẫn dùng config cũ (interface + dry_run của lần đầu).
+    _sniffer_instance = PacketSniffer(
+        interface=interface,
+        packet_queue=packet_queue,
+        callback=callback,
+        filter_expr=filter_expr,
+        dry_run=dry_run,
+        dry_run_duration=dry_run_duration,
+    )
+
     return _sniffer_instance

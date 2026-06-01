@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Network as NetworkIcon, Activity, Filter } from 'lucide-react'
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer
+  ResponsiveContainer
 } from 'recharts'
 import { fetchActiveFlows, fetchTrafficStats } from '../lib/api'
 
@@ -42,7 +42,7 @@ export default function Network() {
 
   // Aggregate protocol distribution
   const protocolStats = flows.reduce((acc, flow) => {
-    const proto = flow.protocol?.toLowerCase() || 'unknown'
+    const proto = String(flow.protocol ?? 'unknown').toLowerCase()
     if (!acc[proto]) acc[proto] = { name: proto, count: 0, packets: 0, bytes: 0 }
     acc[proto].count += 1
     acc[proto].packets += flow.packet_count || 0
@@ -65,7 +65,7 @@ export default function Network() {
 
   // Filter flows by protocol
   const filteredFlows = filterProto
-    ? flows.filter((f) => f.protocol?.toLowerCase() === filterProto)
+    ? flows.filter((f) => String(f.protocol ?? '').toLowerCase() === filterProto)
     : flows
 
   return (
@@ -100,13 +100,13 @@ export default function Network() {
                   cx="50%"
                   cy="50%"
                   outerRadius={90}
-                  label={(entry) => `${entry.name.toUpperCase()} (${entry.count})`}
+                  label={(entry) => `${(entry.name || 'unknown').toUpperCase()} (${entry.count})`}
                 >
                   {protocolData.map((entry, i) => (
                     <Cell key={i} fill={PROTOCOL_COLORS[entry.name] || '#94a3b8'} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v, n) => [`${v} flows`, n.toUpperCase()]} />
+                <Tooltip formatter={(v, n) => [`${v} flows`, String(n).toUpperCase()]} />
               </PieChart>
             </ResponsiveContainer>
           ) : (
@@ -218,7 +218,7 @@ export default function Network() {
                     </td>
                     <td
                       className="px-4 py-2 uppercase font-semibold text-xs"
-                      style={{ color: PROTOCOL_COLORS[flow.protocol?.toLowerCase()] || '#94a3b8' }}
+                      style={{ color: PROTOCOL_COLORS[String(flow.protocol ?? '').toLowerCase()] || '#94a3b8' }}
                     >
                       {flow.protocol}
                     </td>

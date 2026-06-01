@@ -21,7 +21,7 @@ export default function Overview() {
     fetchSystemStats().then(setStats).catch(console.error)
     fetchAlerts({ limit: 5 }).then(setRecentAlerts).catch(console.error)
 
-    // Poll traffic stats every 5s
+    // Poll traffic stats every 10s
     const interval = setInterval(() => {
       fetchTrafficStats().then((data) => {
         setTrafficData((prev) => {
@@ -33,7 +33,7 @@ export default function Overview() {
           return [...prev.slice(-30), point]
         })
       }).catch(() => {})
-    }, 5000)
+    }, 10000)
 
     // WebSocket for live alerts
     connectWebSocket()

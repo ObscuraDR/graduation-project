@@ -58,6 +58,10 @@ async def lifespan(app: FastAPI):
     await bridge.start()
     logger.info("Alert broadcast bridge consumer running")
 
+    # Lưu reference đến main event loop cho email service (thread-safe dispatch)
+    from backend.notifications.email import email_service
+    email_service.set_event_loop(asyncio.get_running_loop())
+
     yield
 
     # Shutdown: Cleanup
@@ -202,7 +206,9 @@ from backend.api.legacy_routes import (
 from backend.api.routes.traffic import traffic_router
 from backend.api.routes.sniffer import sniffer_router
 from backend.api.routes.xai import xai_router
+from backend.api.auth import auth_router
 
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(alerts_router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(predictions_router, prefix="/api/predictions", tags=["predictions"])
 app.include_router(models_router, prefix="/api/models", tags=["models"])

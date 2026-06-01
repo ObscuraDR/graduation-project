@@ -29,13 +29,14 @@ def seed_data():
         # Create default admin user
         admin_user = db.query(User).filter(User.username == "admin").first()
         if not admin_user:
-            from passlib.context import CryptContext
-            pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-            
+            import bcrypt
+            password_bytes = "admin123".encode("utf-8")[:72]  # bcrypt max 72 bytes
+            password_hash = bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode("utf-8")
+
             admin_user = User(
                 username="admin",
                 email="admin@ids-system.com",
-                password_hash=pwd_context.hash("admin123"),
+                password_hash=password_hash,
                 role="admin"
             )
             db.add(admin_user)
@@ -49,7 +50,7 @@ def seed_data():
         
         for entry in default_whitelist:
             existing = db.query(Whitelist).filter(
-                Whititelist.ip_address == entry["ip_address"],
+                Whitelist.ip_address == entry["ip_address"],
                 Whitelist.port == entry["port"],
                 Whitelist.protocol == entry["protocol"]
             ).first()

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # IDS Backend API
   ids-backend:
@@ -14,12 +12,11 @@ services:
       - ./backend/models:/app/backend/models
       - ./logs:/app/logs
       - ./backend/data:/app/backend/data
+    env_file:
+      - .env
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_DB=ids_db
-      - POSTGRES_USER=ids_user
-      - POSTGRES_PASSWORD=ids_password
       - MONGO_URI=mongodb://ids_mongo_user:ids_mongo_pass@mongodb:27017/ids_logs?authSource=admin
       - MONGO_DB=ids_logs
       - REDIS_URL=redis://:ids_redis_pass@redis:6379/0
@@ -30,6 +27,12 @@ services:
       - mongodb
       - redis
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     cap_add:
       - NET_RAW
       - NET_ADMIN
@@ -46,7 +49,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
       - ids-network
     restart: unless-stopped
@@ -58,7 +61,7 @@ services:
 
   # MongoDB for logs
   mongodb:
-    image: mongo:6-alpine
+    image: mongo:6
     container_name: ids-mongodb
     environment:
       MONGO_INITDB_ROOT_USERNAME: ids_mongo_user

@@ -259,7 +259,7 @@ def test_dispatch_creates_task_when_gate_passes(svc: EmailNotificationService) -
             # Yield control so the fire-and-forget task can execute
             await asyncio.sleep(0)
 
-        asyncio.get_event_loop().run_until_complete(_run_dispatch())
+        asyncio.run(_run_dispatch())
 
     mock_send.assert_called_once_with(SAMPLE_ALERT)
 
@@ -282,7 +282,7 @@ def test_dispatch_no_task_when_gate_fails(svc: EmailNotificationService) -> None
             svc.dispatch_alert_email(SAMPLE_ALERT)
             await asyncio.sleep(0)
 
-        asyncio.get_event_loop().run_until_complete(_run_dispatch())
+        asyncio.run(_run_dispatch())
 
     mock_send.assert_not_called()
 

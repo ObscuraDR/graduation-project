@@ -118,10 +118,15 @@ def test_alert_manager_cooldown_expires(alert_manager: AlertManager) -> None:
     alert1 = alert_manager.generate_alert(prediction, flow_info)
     assert alert1 is not None
 
-    # Expire cooldown by backdating the history entry
+    # Expire cooldown: backdate in-memory history AND clear Redis TTL key
+    # (cooldown check ưu tiên Redis nếu available — phải clear cả hai)
     from datetime import timedelta
     past = datetime.utcnow() - timedelta(seconds=alert_manager.alert_cooldown + 1)
     alert_manager.alert_history["10.0.0.55"] = past
+    from backend.cache.redis_cache import get_cache
+    cache = get_cache()
+    if cache.is_connected():
+        cache.clear_alert_cooldown("10.0.0.55")
 
     # Now the cooldown has expired – second alert should succeed
     alert2 = alert_manager.generate_alert(prediction, flow_info)
