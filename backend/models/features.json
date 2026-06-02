@@ -24,6 +24,6 @@
   "n_features": 20,
   "description": "Fixed feature order for ML model inference (must match feature_extractor.py)",
   "version": "1.0",
-  "trained_with": "rf",
-  "trained_date": "2026-05-29T00:08:34.341389"
+  "trained_with": "ensemble",
+  "trained_date": "2026-06-02T01:23:01.915785"
 }

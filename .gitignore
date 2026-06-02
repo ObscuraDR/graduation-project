@@ -14,6 +14,7 @@ dist/
 venv/
 env/
 .venv/
+.venv_demo/
 
 # ─── IDE / Editor ─────────────────────────────────────────────────────────
 .vscode/
@@ -42,6 +43,8 @@ models/*.h5
 models/*.joblib
 !models/.gitkeep
 !models/features.json
+# Local pre-retrain model backups (never commit)
+backend/models/_backup_*/
 
 # ─── Data (raw/processed datasets) ────────────────────────────────────────
 data/raw/

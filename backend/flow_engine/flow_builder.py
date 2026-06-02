@@ -12,6 +12,32 @@ logger = logging.getLogger(__name__)
 PredictionMode = Literal["once", "window"]
 
 
+def canonical_flow_key(
+    src_ip: str,
+    dst_ip: str,
+    src_port: Optional[int],
+    dst_port: Optional[int],
+    protocol: str,
+) -> str:
+    """
+    Build a DIRECTION-INDEPENDENT (canonical) 5-tuple flow key.
+
+    Request packets (A->B) and their replies (B->A) must aggregate into the
+    SAME bidirectional flow so that forward/backward features (total_bwd_*,
+    bwd_packet_rate, bwd_byte_rate, ...) are populated. This matches how the
+    model was trained on CICIDS2017 bidirectional flows; keying on raw
+    direction left every live flow one-directional and skewed inference.
+
+    The two endpoints (ip, port) are sorted so the key is identical regardless
+    of which side initiated the packet.
+    """
+    proto = str(protocol).lower()
+    endpoint_a = (str(src_ip), src_port if src_port is not None else -1)
+    endpoint_b = (str(dst_ip), dst_port if dst_port is not None else -1)
+    low, high = sorted((endpoint_a, endpoint_b))
+    return f"{low[0]}:{low[1]}-{high[0]}:{high[1]}-{proto}"
+
+
 class Flow:
     """Represents a network flow (5-tuple)"""
 
@@ -59,11 +85,27 @@ class Flow:
         self.prediction_count: int = 0
 
     def _generate_flow_key(self) -> str:
-        return f"{self.src_ip}:{self.src_port}:{self.dst_ip}:{self.dst_port}:{self.protocol}"
+        return canonical_flow_key(
+            self.src_ip, self.dst_ip, self.src_port, self.dst_port, self.protocol
+        )
 
     def add_packet(self, packet_info: dict) -> None:
+        # CICIDS2017 byte features are PAYLOAD-ONLY (its "Total Length of
+        # Fwd/Bwd Packet" = sum of L4 payload lengths; this is verifiable:
+        # (total_fwd_bytes + total_bwd_bytes) / packet_count == avg_packet_size
+        # in the training data). The live sniffer provides both full-frame
+        # 'length' (incl. Ethernet/IP/TCP headers ~54B) and L4 'payload_size'.
+        # Use payload_size to match training semantics and avoid a train/serve
+        # skew that inflates byte features at inference time. Fall back to
+        # 'length' when payload_size is absent (e.g. unit-test packets).
+        byte_len = (
+            packet_info["payload_size"]
+            if "payload_size" in packet_info
+            else packet_info.get("length", 0)
+        )
+
         self.packet_count += 1
-        self.byte_count += packet_info.get("length", 0)
+        self.byte_count += byte_len
         self.last_seen = datetime.utcnow()
 
         if self.last_packet_time:
@@ -71,12 +113,13 @@ class Flow:
             self.inter_arrival_times.append(inter_arrival)
         self.last_packet_time = self.last_seen
 
-        if packet_info.get("src_ip") == self.src_ip:
+        is_forward = packet_info.get("src_ip") == self.src_ip
+        if is_forward:
             self.forward_packets += 1
-            self.forward_bytes += packet_info.get("length", 0)
+            self.forward_bytes += byte_len
         else:
             self.backward_packets += 1
-            self.backward_bytes += packet_info.get("length", 0)
+            self.backward_bytes += byte_len
 
         tcp_flags = packet_info.get("tcp_flags", {})
         if tcp_flags:
@@ -91,7 +134,11 @@ class Flow:
             if tcp_flags.get("ACK", False):
                 self.ack_count += 1
 
-        if packet_info.get("dst_port"):
+        # Count destination ports for forward-direction packets only. Backward
+        # (reply) packets carry the initiator's ephemeral port as their
+        # dst_port, which would otherwise inflate unique_dst_ports now that
+        # both directions share one canonical flow.
+        if is_forward and packet_info.get("dst_port"):
             self.unique_dst_ports.add(packet_info["dst_port"])
 
     def get_flow_duration(self) -> float:
@@ -195,7 +242,7 @@ class FlowBuilder:
         dst_port: Optional[int],
         protocol: str,
     ) -> str:
-        return f"{src_ip}:{src_port}:{dst_ip}:{dst_port}:{protocol}"
+        return canonical_flow_key(src_ip, dst_ip, src_port, dst_port, protocol)
 
     def add_packet(self, packet_info: dict) -> Optional[Flow]:
         src_ip = packet_info.get("src_ip")

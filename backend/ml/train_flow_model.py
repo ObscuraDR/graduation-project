@@ -210,6 +210,23 @@ class FlowModelTrainer:
         
         logger.info("Feature scaling complete")
     
+    def _build_class_weights(self, boosts: Dict[str, float]) -> Dict[int, float]:
+        """
+        Build a {encoded_label: weight} dict for RandomForest class_weight.
+
+        All classes default to weight 1.0; names in ``boosts`` get the given
+        multiplier. Resolving by class NAME (then mapping through the fitted
+        LabelEncoder) keeps weights correct regardless of label encoding order.
+        """
+        weights: Dict[int, float] = {}
+        for idx, class_name in enumerate(self.label_encoder.classes_):
+            weights[idx] = float(boosts.get(class_name, 1.0))
+        logger.info(
+            "Class weights: %s",
+            {self.label_encoder.classes_[i]: w for i, w in weights.items()},
+        )
+        return weights
+
     def train_model(self):
         """Train the model"""
         logger.info(f"Training {self.model_type} model...")
@@ -244,13 +261,21 @@ class FlowModelTrainer:
                     class_weight='balanced'
                 )
         elif self.model_type == 'ensemble':
-            # Use RandomForest as ensemble base
+            # Use RandomForest as ensemble base.
+            #
+            # Class weighting: the 'Abnormal' class (Web XSS / SQL-injection /
+            # infiltration grab-bag) is tiny (~770 samples vs 50k for others).
+            # Plain class_weight='balanced' gives it a ~35x weight and the model
+            # over-predicts Abnormal (precision ~0.25). A moderate, explicit boost
+            # (Abnormal x5, others x1) plus deeper/more trees lifts Abnormal
+            # precision and macro-F1 without collapsing recall. See
+            # _exp_abnormal experiment notes.
             self.model = RandomForestClassifier(
-                n_estimators=100,
-                max_depth=10,
+                n_estimators=200,
+                max_depth=20,
                 random_state=self.random_state,
                 n_jobs=-1,
-                class_weight='balanced'
+                class_weight=self._build_class_weights({"Abnormal": 5.0}),
             )
         else:
             raise ValueError(f"Unknown model type: {self.model_type}")

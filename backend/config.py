@@ -96,6 +96,10 @@ class Settings(BaseSettings):
     
     # Request size limits
     max_request_size: int = 10 * 1024 * 1024  # 10MB
+
+    # Live-attack replay demo (thesis defense). Disabled by default; when False
+    # the /api/demo/start endpoint is refused even with a valid API key.
+    enable_demo_replay: bool = False
     
     # Email alerts
     enable_email_alerts: bool = False

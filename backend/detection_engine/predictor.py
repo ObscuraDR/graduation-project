@@ -186,8 +186,11 @@ class Predictor:
         
     def predict_flow(self, flow: Flow) -> Dict[str, Any]:
         """
-        Predict attack type from flow
-        
+        Predict attack type from a live flow.
+
+        Thin wrapper: extract the 20 contract features from the flow, then
+        delegate to ``predict_features`` (the shared inference path).
+
         Args:
             flow: Flow object
         
@@ -196,14 +199,36 @@ class Predictor:
         """
         if not self.model_loader.is_loaded:
             raise ValueError("Model not loaded")
-        
-        # Extract features
+
+        # Extract features, then run the shared inference path so the live
+        # pipeline and offline/demo replay use the identical scaling + model +
+        # class-mapping logic (avoids train/serve drift).
         features = self.feature_extractor.extract_features(flow)
-        
+        return self.predict_features(features)
+
+    def predict_features(self, features: Dict[str, float]) -> Dict[str, Any]:
+        """
+        Run inference on an already-extracted feature dictionary.
+
+        This is the single source of truth for turning a 20-feature vector into
+        a prediction. ``predict_flow`` calls it after extracting features from a
+        live ``Flow``; offline evaluation and the live-attack demo call it with
+        feature dicts sourced from the labelled dataset. Keeping one path
+        guarantees serving == training inference semantics.
+
+        Args:
+            features: Feature dictionary keyed by the 20 contract feature names.
+
+        Returns:
+            Prediction dictionary with attack_type, confidence, severity, etc.
+        """
+        if not self.model_loader.is_loaded:
+            raise ValueError("Model not loaded")
+
         # Validate and convert to fixed order array
         feature_array = self._validate_features(features)
         feature_array = feature_array.reshape(1, -1)
-        
+
         # Make prediction
         try:
             predicted_class = self.model_loader.predict(feature_array)[0]

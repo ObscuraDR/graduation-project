@@ -320,7 +320,7 @@ class AlertManager:
         if ip_address not in self.attack_patterns:
             return []
         
-        return self.attack_patterns[src_ip]
+        return self.attack_patterns[ip_address]
     
     def get_stats(self) -> Dict:
         """Get alert manager statistics"""

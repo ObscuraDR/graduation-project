@@ -206,6 +206,7 @@ from backend.api.legacy_routes import (
 from backend.api.routes.traffic import traffic_router
 from backend.api.routes.sniffer import sniffer_router
 from backend.api.routes.xai import xai_router
+from backend.api.routes.demo import demo_router
 from backend.api.auth import auth_router
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
@@ -217,6 +218,7 @@ app.include_router(stats_router, prefix="/api/stats", tags=["statistics"])
 app.include_router(sniffer_router, prefix="/api/sniffer", tags=["sniffer"])
 app.include_router(traffic_router, prefix="/api/traffic", tags=["traffic"])
 app.include_router(xai_router, prefix="/api/xai", tags=["xai"])
+app.include_router(demo_router, prefix="/api/demo", tags=["demo"])
 
 
 # WebSocket endpoint for real-time updates
