@@ -11,7 +11,7 @@ from sqlalchemy import and_, or_
 
 from backend.database.models import (
     TrafficFlow, FlowFeature, AttackAlert, AttackHistory,
-    Model, Whitelist, User
+    Model, Whitelist, User, Blacklist, GeoBlockRule, SecurityReport
 )
 
 logger = logging.getLogger(__name__)
@@ -286,3 +286,104 @@ class AttackHistoryRepository:
     def get_history_by_ip(db: Session, src_ip: str) -> List[AttackHistory]:
         """Get attack history for an IP"""
         return db.query(AttackHistory).filter(AttackHistory.source_ip == src_ip).all()
+
+
+class BlacklistRepository:
+    """Repository for blacklist operations"""
+
+    @staticmethod
+    def create(db: Session, ip_address: str, reason: str = None,
+               country_code: str = None, auto_blocked: bool = False,
+               expires_at: datetime = None) -> Blacklist:
+        try:
+            entry = Blacklist(
+                ip_address=ip_address, reason=reason,
+                country_code=country_code, auto_blocked=auto_blocked,
+                expires_at=expires_at,
+            )
+            db.add(entry)
+            db.commit()
+            db.refresh(entry)
+            return entry
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error creating blacklist entry: {e}")
+            raise
+
+    @staticmethod
+    def get_by_ip(db: Session, ip_address: str) -> Optional[Blacklist]:
+        return db.query(Blacklist).filter(Blacklist.ip_address == ip_address).first()
+
+    @staticmethod
+    def get_all_active(db: Session) -> List[Blacklist]:
+        return db.query(Blacklist).filter(
+            Blacklist.is_active == True,
+            or_(Blacklist.expires_at == None, Blacklist.expires_at > datetime.utcnow())
+        ).all()
+
+    @staticmethod
+    def deactivate(db: Session, ip_address: str) -> bool:
+        entry = BlacklistRepository.get_by_ip(db, ip_address)
+        if not entry:
+            return False
+        entry.is_active = False
+        db.commit()
+        return True
+
+
+class GeoBlockRepository:
+    """Repository for geo-block rules"""
+
+    @staticmethod
+    def add_rule(db: Session, country_code: str, country_name: str = None) -> GeoBlockRule:
+        try:
+            rule = GeoBlockRule(country_code=country_code.upper(), country_name=country_name)
+            db.add(rule)
+            db.commit()
+            db.refresh(rule)
+            return rule
+        except Exception as e:
+            db.rollback()
+            raise
+
+    @staticmethod
+    def get_active_codes(db: Session) -> List[str]:
+        rows = db.query(GeoBlockRule.country_code).filter(GeoBlockRule.is_active == True).all()
+        return [r[0] for r in rows]
+
+    @staticmethod
+    def remove_rule(db: Session, country_code: str) -> bool:
+        rule = db.query(GeoBlockRule).filter(
+            GeoBlockRule.country_code == country_code.upper()
+        ).first()
+        if not rule:
+            return False
+        db.delete(rule)
+        db.commit()
+        return True
+
+    @staticmethod
+    def get_all(db: Session) -> List[GeoBlockRule]:
+        return db.query(GeoBlockRule).order_by(GeoBlockRule.country_code).all()
+
+
+class SecurityReportRepository:
+    """Repository for security reports"""
+
+    @staticmethod
+    def create(db: Session, report_data: Dict[str, Any]) -> SecurityReport:
+        try:
+            report = SecurityReport(**report_data)
+            db.add(report)
+            db.commit()
+            db.refresh(report)
+            return report
+        except Exception as e:
+            db.rollback()
+            raise
+
+    @staticmethod
+    def get_latest(db: Session, limit: int = 10) -> List[SecurityReport]:
+        return db.query(SecurityReport).order_by(
+            SecurityReport.created_at.desc()
+        ).limit(limit).all()

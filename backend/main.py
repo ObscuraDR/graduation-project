@@ -52,6 +52,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
 
+    # Sync whitelist + blacklist + geo-block from DB into AlertManager
+    try:
+        from backend.database.connection import SessionLocal
+        from backend.database.repository import BlacklistRepository, GeoBlockRepository
+        from backend.database.models import Whitelist
+        _db = SessionLocal()
+        alert_mgr = get_alert_manager()
+        try:
+            for row in _db.query(Whitelist).all():
+                alert_mgr.add_to_whitelist(row.ip_address)
+            for row in BlacklistRepository.get_all_active(_db):
+                alert_mgr.add_to_blacklist(row.ip_address)
+            for code in GeoBlockRepository.get_active_codes(_db):
+                alert_mgr.add_geo_block(code)
+            logger.info("Synced whitelist/blacklist/geoblock into AlertManager")
+        finally:
+            _db.close()
+    except Exception as e:
+        logger.warning(f"Could not sync security lists: {e}")
+
     # Start thread-safe WebSocket alert consumer (async event loop)
     bridge = get_broadcast_bridge()
     get_alert_manager().set_broadcast_bridge(bridge)
@@ -196,6 +216,7 @@ async def metrics():
 
 
 # Include routers
+from backend.api.routes.security import blacklist_router, geoblock_router, reports_router
 from backend.api.legacy_routes import (
     alerts_router,
     predictions_router,
@@ -214,6 +235,9 @@ app.include_router(alerts_router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(predictions_router, prefix="/api/predictions", tags=["predictions"])
 app.include_router(models_router, prefix="/api/models", tags=["models"])
 app.include_router(whitelist_router, prefix="/api/whitelist", tags=["whitelist"])
+app.include_router(blacklist_router, prefix="/api/blacklist", tags=["blacklist"])
+app.include_router(geoblock_router, prefix="/api/geoblock", tags=["geoblock"])
+app.include_router(reports_router, prefix="/api/reports", tags=["reports"])
 app.include_router(stats_router, prefix="/api/stats", tags=["statistics"])
 app.include_router(sniffer_router, prefix="/api/sniffer", tags=["sniffer"])
 app.include_router(traffic_router, prefix="/api/traffic", tags=["traffic"])

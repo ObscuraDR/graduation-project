@@ -41,12 +41,12 @@ api.interceptors.response.use(
 
 // ─── Health ──────────────────────────────────────────────────────────────────
 export async function fetchHealth() {
-  const res = await api.get('/health')
+  const res = await axios.get('/health')
   return res.data
 }
 
 export async function fetchHealthDetailed() {
-  const res = await api.get('/health/detailed')
+  const res = await axios.get('/health/detailed')
   return res.data
 }
 
@@ -63,6 +63,11 @@ export async function stopSniffer() {
 
 export async function fetchSnifferStatus() {
   const res = await api.get('/sniffer/status')
+  return res.data
+}
+
+export async function fetchInterfaces() {
+  const res = await api.get('/sniffer/interfaces')
   return res.data
 }
 
@@ -83,10 +88,11 @@ export async function fetchTopTalkers(limit = 10) {
 }
 
 // ─── Alerts ──────────────────────────────────────────────────────────────────
-export async function fetchAlerts({ skip = 0, limit = 50, severity, status } = {}) {
+export async function fetchAlerts({ skip = 0, limit = 50, severity, status, attackType } = {}) {
   const params = { skip, limit }
   if (severity) params.severity = severity
   if (status) params.status = status
+  if (attackType) params.attackType = attackType
   const res = await api.get('/alerts/', { params })
   return res.data
 }
@@ -130,6 +136,49 @@ export async function addWhitelist(data) {
 
 export async function removeWhitelist(data) {
   const res = await api.post('/whitelist/remove', data)
+  return res.data
+}
+
+// ─── Blacklist ────────────────────────────────────────────────────────────────
+export async function fetchBlacklist() {
+  const res = await api.get('/blacklist/')
+  return res.data
+}
+
+export async function addBlacklist(data) {
+  const res = await api.post('/blacklist/', data)
+  return res.data
+}
+
+export async function removeBlacklist(ipAddress) {
+  const res = await api.delete(`/blacklist/${ipAddress}`)
+  return res.data
+}
+
+// ─── Geo-block ────────────────────────────────────────────────────────────────
+export async function fetchGeoBlocks() {
+  const res = await api.get('/geoblock/')
+  return res.data
+}
+
+export async function addGeoBlock(data) {
+  const res = await api.post('/geoblock/', data)
+  return res.data
+}
+
+export async function removeGeoBlock(countryCode) {
+  const res = await api.delete(`/geoblock/${countryCode}`)
+  return res.data
+}
+
+// ─── Reports ──────────────────────────────────────────────────────────────────
+export async function fetchSecurityReport(hours = 24, save = false) {
+  const res = await api.get('/reports/security', { params: { hours, save } })
+  return res.data
+}
+
+export async function fetchReportHistory(limit = 10) {
+  const res = await api.get('/reports/security/history', { params: { limit } })
   return res.data
 }
 

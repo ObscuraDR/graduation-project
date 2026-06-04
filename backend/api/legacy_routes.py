@@ -130,6 +130,7 @@ async def get_alerts(
     limit: int = 100,
     severity: Optional[str] = None,
     alert_status: Optional[str] = Query(None, alias="status"),
+    attack_type: Optional[str] = Query(None, alias="attackType"),
     db: Session = Depends(get_db),
 ):
     """Get all alerts with optional filtering"""
@@ -139,6 +140,8 @@ async def get_alerts(
         query = query.filter(AttackAlert.severity == severity)
     if alert_status:
         query = query.filter(AttackAlert.status == alert_status)
+    if attack_type:
+        query = query.filter(AttackAlert.attack_type == attack_type)
 
     alerts = query.order_by(AttackAlert.timestamp.desc()).offset(skip).limit(limit).all()
 

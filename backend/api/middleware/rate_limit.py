@@ -24,8 +24,8 @@ from starlette.responses import JSONResponse, Response
 
 # (max_requests, window_seconds)
 _ROUTE_LIMITS: list[Tuple[str, int, int]] = [
-    ("/api/sniffer/",    10, 60),
-    ("/api/whitelist/",  30, 60),
+    ("/api/sniffer/",    60, 60),
+    ("/api/whitelist/",  60, 60),
     ("/api/xai/",        60, 60),
 ]
 

@@ -7,7 +7,7 @@ import { fetchAlerts, resolveAlert, deleteAlert } from '../lib/api'
 export default function Alerts() {
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState({ severity: '', status: '' })
+  const [filter, setFilter] = useState({ severity: '', status: '', attackType: '' })
   const [selectedAlert, setSelectedAlert] = useState(null)
 
   const loadAlerts = async () => {
@@ -102,6 +102,19 @@ export default function Alerts() {
 
       {/* Filters */}
       <div className="flex gap-3">
+        <select
+          value={filter.attackType}
+          onChange={(e) => setFilter((f) => ({ ...f, attackType: e.target.value }))}
+          className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+        >
+          <option value="">All Attack Types</option>
+          <option value="DDoS">DDoS</option>
+          <option value="PortScan">PortScan</option>
+          <option value="BruteForce">BruteForce</option>
+          <option value="Botnet">Botnet</option>
+          <option value="Abnormal">Abnormal</option>
+          <option value="Normal">Normal</option>
+        </select>
         <select
           value={filter.severity}
           onChange={(e) => setFilter((f) => ({ ...f, severity: e.target.value }))}

@@ -11,8 +11,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backend.database.connection import init_db, SessionLocal
 from backend.database.models import (
-    User, TrafficFlow, FlowFeature, AttackAlert, 
-    AttackHistory, Model, Whitelist, Metric
+    User, TrafficFlow, FlowFeature, AttackAlert,
+    AttackHistory, Model, Whitelist, Metric,
+    Blacklist, GeoBlockRule, SecurityReport
 )
 from backend.config import settings
 import logging

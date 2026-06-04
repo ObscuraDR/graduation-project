@@ -61,9 +61,15 @@ class AlertManager:
         # Attack correlation tracking
         self.attack_patterns: Dict[str, List[Dict]] = defaultdict(list)
         
-        # Whitelist
+        # Whitelist / Blacklist / Geo-block
         self.whitelist: set = set()
-        
+        self.blacklist: set = set()
+        self.geo_blocked_countries: set = set()  # ISO codes, e.g. {"CN", "RU"}
+
+        # Auto-block thresholds
+        self.auto_block_enabled: bool = True
+        self.auto_block_threshold: int = 10       # alerts from same IP within window
+
         # Statistics
         self.total_alerts = 0
         self.alerts_by_type: Dict[str, int] = defaultdict(int)
@@ -112,7 +118,18 @@ class AlertManager:
         if self._is_whitelisted(src_ip):
             logger.debug(f"IP whitelisted: {src_ip}")
             return None
-        
+
+        # Check blacklist (already blocked — suppress alert noise, just log)
+        if self._is_blacklisted(src_ip):
+            logger.debug(f"IP already blacklisted: {src_ip}")
+            return None
+
+        # Check geo-block
+        if self._is_geo_blocked(src_ip):
+            logger.info(f"IP geo-blocked: {src_ip}")
+            self._auto_add_to_blacklist(src_ip, reason="geo-blocked", auto_blocked=True)
+            return None
+
         # Check cooldown
         if self._is_in_cooldown(src_ip):
             logger.debug(f"IP in cooldown: {src_ip}")
@@ -150,7 +167,11 @@ class AlertManager:
         
         self.total_alerts += 1
         logger.info(f"Alert generated: {attack_type} from {src_ip} (severity: {adjusted_severity})")
-        
+
+        # Auto-block if threshold exceeded
+        if self.auto_block_enabled:
+            self._check_auto_block(src_ip, attack_type)
+
         # Save to database
         if self.enable_db_save:
             self._save_alert_to_db(alert, flow_id)
@@ -171,8 +192,57 @@ class AlertManager:
         return alert
     
     def _is_whitelisted(self, ip_address: str) -> bool:
-        """Check if IP is whitelisted"""
         return ip_address in self.whitelist
+
+    def _is_blacklisted(self, ip_address: str) -> bool:
+        return ip_address in self.blacklist
+
+    def _is_geo_blocked(self, ip_address: str) -> bool:
+        if not self.geo_blocked_countries:
+            return False
+        try:
+            from backend.api.routes.geoip import lookup_country
+            code = lookup_country(ip_address)
+            return code in self.geo_blocked_countries if code else False
+        except Exception:
+            return False
+
+    def _auto_add_to_blacklist(self, ip_address: str, reason: str = "auto-blocked", auto_blocked: bool = True):
+        """Add IP to blacklist in-memory and DB (non-blocking best-effort)."""
+        if ip_address in self.blacklist:
+            return
+        self.blacklist.add(ip_address)
+        try:
+            from backend.database.connection import SessionLocal
+            from backend.database.repository import BlacklistRepository
+            db = SessionLocal()
+            try:
+                existing = BlacklistRepository.get_by_ip(db, ip_address)
+                if not existing:
+                    BlacklistRepository.create(
+                        db, ip_address=ip_address,
+                        reason=reason, auto_blocked=auto_blocked
+                    )
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Failed to persist auto-block for {ip_address}: {e}")
+
+    def _check_auto_block(self, src_ip: str, attack_type: str):
+        """Auto-block IP when alert count exceeds threshold within correlation window."""
+        current_time = datetime.utcnow()
+        window_start = current_time - timedelta(seconds=self.correlation_window)
+        recent = [
+            a for a in self.attack_patterns.get(src_ip, [])
+            if datetime.fromisoformat(a['timestamp']) >= window_start
+        ]
+        if len(recent) >= self.auto_block_threshold:
+            logger.warning(f"Auto-blocking {src_ip}: {len(recent)} alerts in {self.correlation_window}s")
+            self._auto_add_to_blacklist(
+                src_ip,
+                reason=f"Auto-blocked: {len(recent)} {attack_type} alerts in {self.correlation_window}s",
+                auto_blocked=True,
+            )
     
     def _is_in_cooldown(self, ip_address: str) -> bool:
         """Check cooldown via Redis (falls back to in-memory if Redis unavailable)."""
@@ -300,6 +370,25 @@ class AlertManager:
             "set_websocket_manager() is deprecated; alerts use AlertBroadcastBridge"
         )
     
+    def add_to_blacklist(self, ip_address: str):
+        self.blacklist.add(ip_address)
+        logger.info(f"Added {ip_address} to blacklist")
+
+    def remove_from_blacklist(self, ip_address: str):
+        self.blacklist.discard(ip_address)
+        logger.info(f"Removed {ip_address} from blacklist")
+
+    def get_blacklist(self) -> List[str]:
+        return list(self.blacklist)
+
+    def add_geo_block(self, country_code: str):
+        self.geo_blocked_countries.add(country_code.upper())
+        logger.info(f"Geo-block added: {country_code.upper()}")
+
+    def remove_geo_block(self, country_code: str):
+        self.geo_blocked_countries.discard(country_code.upper())
+        logger.info(f"Geo-block removed: {country_code.upper()}")
+
     def add_to_whitelist(self, ip_address: str):
         """Add IP to whitelist"""
         self.whitelist.add(ip_address)
@@ -323,16 +412,19 @@ class AlertManager:
         return self.attack_patterns[ip_address]
     
     def get_stats(self) -> Dict:
-        """Get alert manager statistics"""
         return {
             'total_alerts': self.total_alerts,
             'alerts_by_type': dict(self.alerts_by_type),
             'alerts_by_severity': dict(self.alerts_by_severity),
             'whitelist_count': len(self.whitelist),
+            'blacklist_count': len(self.blacklist),
+            'geo_blocked_countries': list(self.geo_blocked_countries),
             'active_attackers': len(self.attack_patterns),
             'confidence_threshold': self.confidence_threshold,
             'alert_cooldown': self.alert_cooldown,
-            'correlation_window': self.correlation_window
+            'correlation_window': self.correlation_window,
+            'auto_block_enabled': self.auto_block_enabled,
+            'auto_block_threshold': self.auto_block_threshold,
         }
     
     def clear_history(self, ip_address: Optional[str] = None):

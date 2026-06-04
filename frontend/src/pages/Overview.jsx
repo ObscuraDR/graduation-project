@@ -70,35 +70,52 @@ export default function Overview() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="Total Alerts"
-          value={stats?.total_alerts || 0}
-          subtitle={`${stats?.active_alerts || 0} active`}
-          icon={AlertTriangle}
-          color="red"
-        />
-        <StatCard
-          title="Active Flows"
-          value={trafficData.length > 0 ? trafficData[trafficData.length - 1].flows : 0}
-          subtitle="In memory"
-          icon={Activity}
-          color="blue"
-        />
-        <StatCard
-          title="Services"
-          value={health ? [health.postgres?.connected, health.redis?.connected, health.mongo?.connected].filter(Boolean).length : 0}
-          subtitle="of 3 connected"
-          icon={Wifi}
-          color="green"
-        />
-        <StatCard
-          title="Model Status"
-          value={health?.model_loaded ? 'Loaded' : 'Not Loaded'}
-          subtitle="Ensemble classifier"
-          icon={Shield}
-          color={health?.model_loaded ? 'green' : 'yellow'}
-        />
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 divide-y md:divide-y-0 md:divide-x md:flex">
+        {[
+          {
+            title: 'Total Alerts',
+            value: stats?.total_alerts || 0,
+            subtitle: `${stats?.active_alerts || 0} active`,
+            icon: AlertTriangle,
+            color: (stats?.total_alerts || 0) > 100 ? '#ef4444' : (stats?.total_alerts || 0) > 50 ? '#f59e0b' : '#8b5cf6',
+            bg: (stats?.total_alerts || 0) > 100 ? 'bg-red-50' : (stats?.total_alerts || 0) > 50 ? 'bg-yellow-50' : 'bg-purple-50',
+          },
+          {
+            title: 'Active Flows',
+            value: trafficData.length > 0 ? trafficData[trafficData.length - 1].flows : 0,
+            subtitle: 'In memory',
+            icon: Activity,
+            color: '#3b82f6',
+            bg: 'bg-blue-50',
+          },
+          {
+            title: 'Services',
+            value: `${health ? [health.postgres?.connected, health.redis?.connected, health.mongo?.connected].filter(Boolean).length : 0} / 3`,
+            subtitle: health && [health.postgres?.connected, health.redis?.connected, health.mongo?.connected].every(Boolean) ? '✓ All connected' : '⚠ Some offline',
+            icon: Wifi,
+            color: health && [health.postgres?.connected, health.redis?.connected, health.mongo?.connected].every(Boolean) ? '#22c55e' : '#f59e0b',
+            bg: health && [health.postgres?.connected, health.redis?.connected, health.mongo?.connected].every(Boolean) ? 'bg-green-50' : 'bg-yellow-50',
+          },
+          {
+            title: 'Model Status',
+            value: health?.model_loaded ? 'Loaded' : 'Not Loaded',
+            subtitle: 'Ensemble classifier',
+            icon: Shield,
+            color: health?.model_loaded ? '#22c55e' : '#ef4444',
+            bg: health?.model_loaded ? 'bg-green-50' : 'bg-red-50',
+          },
+        ].map(({ title, value, subtitle, icon: Icon, color, bg }) => (
+          <div key={title} className="flex-1 flex items-center gap-4 px-6 py-5">
+            <div className={`p-3 rounded-xl ${bg} shrink-0`}>
+              <Icon className="w-5 h-5" style={{ color }} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{title}</p>
+              <p className="text-2xl font-bold leading-tight" style={{ color }}>{value}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Charts Row */}

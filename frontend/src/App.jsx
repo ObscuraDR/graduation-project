@@ -8,6 +8,7 @@ import Traffic from './pages/Traffic'
 import Network from './pages/Network'
 import AIInsights from './pages/AIInsights'
 import Settings from './pages/Settings'
+import Reports from './pages/Reports'
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="traffic" element={<Traffic />} />
           <Route path="network" element={<Network />} />
           <Route path="ai-insights" element={<AIInsights />} />
+          <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

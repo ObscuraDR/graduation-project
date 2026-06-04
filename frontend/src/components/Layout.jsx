@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { Shield, AlertTriangle, Activity, Brain, Settings, Network, LogOut } from 'lucide-react'
+import { Shield, AlertTriangle, Activity, Brain, Settings, Network, LogOut, FileText } from 'lucide-react'
 import clsx from 'clsx'
 import ErrorBoundary from './ErrorBoundary'
 import { getUser, clearAuth } from '../lib/auth'
@@ -11,6 +11,7 @@ const navItems = [
   { to: '/traffic', icon: Shield, label: 'Traffic' },
   { to: '/network', icon: Network, label: 'Network' },
   { to: '/ai-insights', icon: Brain, label: 'AI Insights' },
+  { to: '/reports', icon: FileText, label: 'Reports' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 

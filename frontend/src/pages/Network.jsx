@@ -4,7 +4,7 @@ import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer
 } from 'recharts'
-import { fetchActiveFlows, fetchTrafficStats } from '../lib/api'
+import { fetchActiveFlows, fetchTrafficStats, fetchTopTalkers } from '../lib/api'
 
 const PROTOCOL_COLORS = {
   tcp: '#3b82f6',
@@ -16,18 +16,21 @@ const PROTOCOL_COLORS = {
 export default function Network() {
   const [flows, setFlows] = useState([])
   const [stats, setStats] = useState(null)
+  const [topTalkers, setTopTalkers] = useState([])
   const [loading, setLoading] = useState(true)
   const [filterProto, setFilterProto] = useState('')
 
   const loadData = async () => {
     setLoading(true)
     try {
-      const [flowsData, statsData] = await Promise.all([
+      const [flowsData, statsData, talkersData] = await Promise.all([
         fetchActiveFlows(200),
         fetchTrafficStats(),
+        fetchTopTalkers(10),
       ])
       setFlows(flowsData)
       setStats(statsData)
+      setTopTalkers(talkersData)
     } catch (err) {
       console.error('Failed to load network data:', err)
     }
@@ -83,6 +86,61 @@ export default function Network() {
         </button>
       </div>
 
+      {/* Summary Cards */}
+      {stats && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 divide-y md:divide-y-0 md:divide-x md:flex">
+          {[
+            {
+              title: 'Active Flows',
+              value: (stats.flows?.active_flows || 0).toLocaleString(),
+              subtitle: 'Currently tracked',
+              icon: NetworkIcon,
+              color: '#3b82f6',
+              bg: 'bg-blue-50',
+            },
+            {
+              title: 'Total Flows Created',
+              value: (stats.flows?.total_flows_created || 0).toLocaleString(),
+              subtitle: 'Since pipeline start',
+              icon: Activity,
+              color: '#8b5cf6',
+              bg: 'bg-purple-50',
+            },
+            {
+              title: 'Packets Captured',
+              value: (stats.pipeline?.sniffer_stats?.packets_captured || 0).toLocaleString(),
+              subtitle: 'Total intercepted',
+              icon: Filter,
+              color: '#22c55e',
+              bg: 'bg-green-50',
+            },
+            {
+              title: 'Packets / sec',
+              value: (stats.pipeline?.sniffer_stats?.packets_per_second || 0).toFixed(1),
+              subtitle: 'Live throughput',
+              icon: Activity,
+              color: stats.pipeline?.sniffer_stats?.packets_per_second > 0 ? '#f59e0b' : '#94a3b8',
+              bg: stats.pipeline?.sniffer_stats?.packets_per_second > 0 ? 'bg-yellow-50' : 'bg-gray-50',
+              live: stats.pipeline?.sniffer_stats?.packets_per_second > 0,
+            },
+          ].map(({ title, value, subtitle, icon: Icon, color, bg, live }) => (
+            <div key={title} className="flex-1 flex items-center gap-4 px-6 py-5">
+              <div className={`p-3 rounded-xl ${bg} shrink-0`}>
+                <Icon className="w-5 h-5" style={{ color }} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{title}</p>
+                  {live && <span className="flex h-2 w-2"><span className="animate-ping absolute h-2 w-2 rounded-full bg-yellow-400 opacity-75" /><span className="h-2 w-2 rounded-full bg-yellow-500" /></span>}
+                </div>
+                <p className="text-2xl font-bold leading-tight" style={{ color }}>{value}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Protocol Distribution & Top Ports */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Protocol Pie */}
@@ -132,6 +190,24 @@ export default function Network() {
           )}
         </div>
       </div>
+
+      {/* Top Talkers */}
+      {topTalkers.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-4">Top Talkers (by packet count)</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+            {topTalkers.map((talker, i) => (
+              <div key={i} className="p-3 bg-gray-50 rounded-lg">
+                <div className="text-xs text-gray-500 mb-1">#{i + 1}</div>
+                <div className="text-sm font-mono font-medium text-gray-900 mb-1">{talker.src_ip}</div>
+                <div className="text-xs text-gray-600">
+                  {talker.packet_count?.toLocaleString()} pkts • {talker.flow_count} flows
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Protocol Statistics Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">

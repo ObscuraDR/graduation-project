@@ -189,6 +189,52 @@ class Whitelist(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class Blacklist(Base):
+    """Blacklist for blocked IPs"""
+    __tablename__ = "blacklist"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ip_address = Column(String(45), nullable=False, unique=True, index=True)
+    reason = Column(Text, nullable=True)
+    country_code = Column(String(5), nullable=True)   # e.g. "CN", "RU"
+    auto_blocked = Column(Boolean, default=False)      # True = blocked by AlertManager
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)       # None = permanent
+
+
+class GeoBlockRule(Base):
+    """Geo-blocking rules by country code"""
+    __tablename__ = "geo_block_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    country_code = Column(String(5), nullable=False, unique=True, index=True)
+    country_name = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SecurityReport(Base):
+    """Periodic security reports"""
+    __tablename__ = "security_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    report_id = Column(String(50), unique=True, nullable=False)
+    period_start = Column(DateTime, nullable=False)
+    period_end = Column(DateTime, nullable=False)
+    total_alerts = Column(Integer, default=0)
+    critical_count = Column(Integer, default=0)
+    high_count = Column(Integer, default=0)
+    medium_count = Column(Integer, default=0)
+    low_count = Column(Integer, default=0)
+    top_attackers = Column(JSON, nullable=True)        # [{ip, count, attack_type}]
+    top_attack_types = Column(JSON, nullable=True)     # [{type, count}]
+    auto_blocked_count = Column(Integer, default=0)
+    geo_blocked_count = Column(Integer, default=0)
+    summary = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Metric(Base):
     """Model performance metrics over time"""
     __tablename__ = "metrics"

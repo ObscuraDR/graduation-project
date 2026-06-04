@@ -19,13 +19,11 @@ from backend.api.validation import require_valid_interface
 
 logger = logging.getLogger(__name__)
 
-# All routes in this router require a valid API key.
-# Using router-level dependency keeps individual endpoints clean.
 sniffer_router = APIRouter(dependencies=[Depends(verify_api_key)])
 
-# Shared with main lifespan shutdown (module-level coordinator task)
 pipeline_task: Optional[asyncio.Task] = None
 pipeline_coordinator = None
+_extra_pipelines: dict = {}
 
 
 @sniffer_router.post("/start")
@@ -45,26 +43,25 @@ async def start_sniffer(
     Requires header:  X-API-Key: <key>
 
     Parameters:
-    - interface: Network interface to capture from
+    - interface: Network interface to capture from (can be called multiple times for different interfaces)
     - dry_run: If True, capture for 3 seconds then stop (for testing)
     """
     global pipeline_task, pipeline_coordinator
 
     if pipeline_coordinator and pipeline_coordinator.is_running:
-        return {"status": "error", "message": "Sniffer is already running"}
+        if interface == pipeline_coordinator.interface:
+            return {"status": "error", "message": "Sniffer is already running on this interface"}
+        if interface in _extra_pipelines and _extra_pipelines[interface].is_running:
+            return {"status": "error", "message": f"Sniffer already running on {interface}"}
 
-    # Validate interface name is safe (no injection chars) before OS lookup
     require_valid_interface(interface)
 
-    # Validate min_packets range
     if not (1 <= min_packets <= 10_000):
         raise HTTPException(status_code=422, detail="min_packets must be 1–10000")
 
-    # Validate prediction_mode
     if prediction_mode not in ("once", "window"):
         raise HTTPException(status_code=422, detail="prediction_mode must be 'once' or 'window'")
 
-    # Validate interface exists on the host
     from backend.capture_engine.packet_sniffer import validate_interface as hw_validate_interface
     is_valid, error_msg, available_interfaces = hw_validate_interface(interface)
     if not is_valid:
@@ -77,26 +74,43 @@ async def start_sniffer(
             },
         )
 
-    from backend.pipeline.coordinator import get_coordinator
+    from backend.pipeline.coordinator import get_coordinator, PipelineCoordinator
     from backend.api.websocket import get_broadcast_bridge
     from backend.alert_engine.alert_manager import get_alert_manager
 
     bridge = get_broadcast_bridge()
     get_alert_manager().set_broadcast_bridge(bridge)
 
-    pipeline_coordinator = get_coordinator(
-        interface=interface,
-        filter_expr=filter_expr,
-        model_name=model_name,
-        min_packets_per_flow=min_packets,
-        prediction_mode=prediction_mode,
-        prediction_interval_sec=prediction_interval_sec,
-        flow_expire_sec=flow_expire_sec,
-        dry_run=dry_run,
-    )
-    pipeline_coordinator.set_broadcast_bridge(bridge)
+    is_primary = not (pipeline_coordinator and pipeline_coordinator.is_running)
 
-    pipeline_task = asyncio.create_task(pipeline_coordinator.start())
+    if is_primary:
+        coordinator = get_coordinator(
+            interface=interface,
+            filter_expr=filter_expr,
+            model_name=model_name,
+            min_packets_per_flow=min_packets,
+            prediction_mode=prediction_mode,
+            prediction_interval_sec=prediction_interval_sec,
+            flow_expire_sec=flow_expire_sec,
+            dry_run=dry_run,
+        )
+        coordinator.set_broadcast_bridge(bridge)
+        pipeline_coordinator = coordinator
+        pipeline_task = asyncio.create_task(coordinator.start())
+    else:
+        coordinator = PipelineCoordinator(
+            interface=interface,
+            filter_expr=filter_expr,
+            model_name=model_name,
+            min_packets_per_flow=min_packets,
+            prediction_mode=prediction_mode,
+            prediction_interval_sec=prediction_interval_sec,
+            flow_expire_sec=flow_expire_sec,
+            dry_run=dry_run,
+        )
+        coordinator.set_broadcast_bridge(bridge)
+        _extra_pipelines[interface] = coordinator
+        asyncio.create_task(coordinator.start())
 
     logger.info("IDS pipeline started on interface %s (dry_run=%s)", interface, dry_run)
     return {
@@ -114,25 +128,55 @@ async def start_sniffer(
 
 
 @sniffer_router.post("/stop")
-async def stop_sniffer():
+async def stop_sniffer(interface: Optional[str] = None):
     """
-    POST /api/sniffer/stop — stop the IDS pipeline and background capture task.
+    POST /api/sniffer/stop — stop the IDS pipeline.
+    If interface query param is specified, stop only that interface; otherwise stop all.
 
     Requires header:  X-API-Key: <key>
     """
     global pipeline_coordinator, pipeline_task
 
-    if not pipeline_coordinator or not pipeline_coordinator.is_running:
-        return {"status": "error", "message": "Sniffer is not running"}
+    stopped = []
 
-    pipeline_coordinator.stop()
+    if interface:
+        if pipeline_coordinator and pipeline_coordinator.interface == interface and pipeline_coordinator.is_running:
+            pipeline_coordinator.stop()
+            if pipeline_task:
+                pipeline_task.cancel()
+                pipeline_task = None
+            stopped.append(interface)
+        elif interface in _extra_pipelines and _extra_pipelines[interface].is_running:
+            _extra_pipelines[interface].stop()
+            del _extra_pipelines[interface]
+            stopped.append(interface)
+        else:
+            return {"status": "error", "message": f"No running sniffer on interface {interface}"}
+    else:
+        if pipeline_coordinator and pipeline_coordinator.is_running:
+            pipeline_coordinator.stop()
+            if pipeline_task:
+                pipeline_task.cancel()
+                pipeline_task = None
+            stopped.append(pipeline_coordinator.interface)
+        for iface, coord in list(_extra_pipelines.items()):
+            if coord.is_running:
+                coord.stop()
+                stopped.append(iface)
+        _extra_pipelines.clear()
+        if not stopped:
+            return {"status": "error", "message": "Sniffer is not running"}
 
-    if pipeline_task:
-        pipeline_task.cancel()
-        pipeline_task = None
+    logger.info("IDS pipeline stopped: %s", stopped)
+    return {"status": "success", "message": f"Sniffer stopped: {', '.join(stopped)}"}
 
-    logger.info("IDS pipeline stopped")
-    return {"status": "success", "message": "Sniffer stopped"}
+
+@sniffer_router.get("/interfaces")
+async def list_interfaces():
+    """GET /api/sniffer/interfaces — list available network interfaces."""
+    from backend.capture_engine.packet_sniffer import get_available_interfaces
+    interfaces = get_available_interfaces()
+    return {"interfaces": interfaces}
 
 
 @sniffer_router.get("/status")
@@ -153,4 +197,12 @@ async def sniffer_status():
 
     stats = pipeline_coordinator.get_stats()
     stats["status"] = "running" if pipeline_coordinator.is_running else "stopped"
+
+    if _extra_pipelines:
+        stats["extra_interfaces"] = {
+            iface: coord.get_stats()
+            for iface, coord in _extra_pipelines.items()
+            if coord.is_running
+        }
+
     return stats

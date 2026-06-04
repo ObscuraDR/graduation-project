@@ -51,5 +51,9 @@ httpx==0.25.2
 prometheus-client
 python-json-logger
 
+# GeoIP (optional — fallback to ip-api.com if not installed)
+requests>=2.31.0
+# geoip2>=4.8.0  # uncomment + place GeoLite2-Country.mmdb in backend/data/
+
 # Load Testing
 locust
