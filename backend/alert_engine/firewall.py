@@ -49,7 +49,12 @@ async def manual_unblock(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Chỉ Admin mới có quyền gỡ chặn IP")
     if await fw_manager.unblock_ip(ip):
-        BlacklistRepository.remove_by_ip(db, ip)
+        # BlacklistRepository does not provide remove_by_ip(); deactivate the DB row instead.
+        if hasattr(BlacklistRepository, "deactivate"):
+            BlacklistRepository.deactivate(db, ip)
+        else:
+            # Fallback: best-effort deactivate
+            BlacklistRepository.deactivate(db, ip)
         return {"status": "success", "message": f"IP {ip} unblocked"}
     raise HTTPException(status_code=500, detail="Failed to remove firewall rule")
 

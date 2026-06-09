@@ -195,6 +195,17 @@ def _build_report(db: Session, hours: int = 24) -> Dict[str, Any]:
     auto_blocked = db.query(Blacklist).filter_by(auto_blocked=True).count()
     geo_blocked = db.query(GeoBlockRule).filter_by(is_active=True).count()
 
+    # Lightweight human-readable summary for PDF/export UI.
+    critical = counts["critical"]
+    high = counts["high"]
+    medium = counts["medium"]
+    low = counts["low"]
+    summary = (
+        f"In the last {hours}h, the system observed {total} alerts: "
+        f"{critical} critical, {high} high, {medium} medium, and {low} low. "
+        f"Auto-blocked IPs: {auto_blocked}; Geo-blocked countries: {geo_blocked}."
+    )
+
     return {
         "report_id": str(uuid.uuid4()),
         "period_hours": hours,
@@ -209,6 +220,7 @@ def _build_report(db: Session, hours: int = 24) -> Dict[str, Any]:
         "top_attack_types": top_attack_types,
         "auto_blocked_count": auto_blocked,
         "geo_blocked_count": geo_blocked,
+        "summary": summary,
         "generated_at": now.isoformat(),
     }
 
