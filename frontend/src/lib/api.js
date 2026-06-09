@@ -1,6 +1,5 @@
 import axios from 'axios'
-import { getToken, clearAuth } from './auth'
-
+import { clearAuth } from './auth'
 const API_BASE = '/api'
 
 function getApiKey() {
@@ -12,12 +11,32 @@ const api = axios.create({
   timeout: 10000,
 })
 
+// Crucial for sending/receiving cookies with cross-origin requests
+axios.defaults.withCredentials = true;
+api.defaults.withCredentials = true;
+
+// Helper to get a cookie by name
+function getCookie(name) {
+  const nameEQ = name + "=";
+  const ca = document.cookie.split(';');
+  for(let i=0; i < ca.length; i++) {
+    let c = ca[i];
+    while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+    if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+  }
+  return null;
+}
+
 // Tự động thêm X-API-Key + Bearer token cho mọi request
 api.interceptors.request.use((config) => {
   const key = getApiKey()
   if (key) config.headers['X-API-Key'] = key
-  const token = getToken()
-  if (token) config.headers['Authorization'] = `Bearer ${token}`
+  // JWT is now in HttpOnly cookie, browser handles it automatically.
+  // Add CSRF token for state-changing methods (POST, PUT, DELETE, PATCH)
+  const csrfToken = getCookie('csrf_token');
+  if (csrfToken && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(config.method.toUpperCase())) {
+    config.headers['X-CSRF-Token'] = csrfToken;
+  }
   return config
 })
 
@@ -155,6 +174,16 @@ export async function removeBlacklist(ipAddress) {
   return res.data
 }
 
+export async function fetchCloudflareBlacklist() {
+  const res = await api.get('/firewall/cloudflare-blacklist')
+  return res.data
+}
+
+export async function removeCloudflareBlacklist(ip) {
+  const res = await api.delete(`/firewall/cloudflare-unblock/${ip}`)
+  return res.data
+}
+
 // ─── Geo-block ────────────────────────────────────────────────────────────────
 export async function fetchGeoBlocks() {
   const res = await api.get('/geoblock/')
@@ -191,7 +220,12 @@ export async function explainPrediction(features, modelName = 'ensemble') {
 // ─── Auth (JWT) ──────────────────────────────────────────────────────────────
 export async function loginRequest(username, password) {
   // Dùng axios trực tiếp để không vướng interceptor 401-redirect khi đăng nhập sai
-  const res = await axios.post(`${API_BASE}/auth/login`, { username, password })
+  const res = await axios.post(`${API_BASE}/auth/login`, { username, password }, { withCredentials: true })
+  return res.data
+}
+
+export async function logoutRequest() {
+  const res = await api.post('/auth/logout')
   return res.data
 }
 

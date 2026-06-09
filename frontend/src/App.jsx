@@ -1,37 +1,55 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import Layout from './components/Layout'
-import RequireAuth from './components/RequireAuth'
-import Login from './pages/Login'
-import Overview from './pages/Overview'
-import Alerts from './pages/Alerts'
-import Traffic from './pages/Traffic'
-import Network from './pages/Network'
-import AIInsights from './pages/AIInsights'
-import Settings from './pages/Settings'
-import Reports from './pages/Reports'
+import React from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import RequireAuth from './components/RequireAuth';
+import Sidebar from './components/Sidebar'; // Import Sidebar component
+
+// Import các trang của bạn
+import Login from './pages/Login';
+import Overview from './pages/Overview';
+import Alerts from './pages/Alerts';
+import Firewall from './pages/Firewall';
+import ServerManagement from './pages/ServerManagement';
+import NotificationSettings from './pages/NotificationSettings';
+import ProfileSettings from './pages/ProfileSettings'; // Import ProfileSettings
+import GeoBlocking from './pages/GeoBlocking'; // Import GeoBlocking
+import UserManagement from './pages/UserManagement'; // Import UserManagement
+import AIInsights from './pages/AIInsights';
+import Network from './pages/Network';
+import Reports from './pages/Reports';
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route
-          path="/"
+        
+        {/* Protected Routes */}
+        <Route 
+          path="/" 
           element={
             <RequireAuth>
-              <Layout />
+              <div className="flex min-h-screen bg-gray-900 text-gray-200">
+                <Sidebar /> {/* Render Sidebar */}
+                <div className="flex-1 p-6">
+                  <Routes>
+                    <Route index element={<Overview />} />
+                    <Route path="alerts" element={<Alerts />} />
+                    <Route path="firewall" element={<Firewall />} />
+                    <Route path="servers" element={<ServerManagement />} />
+                    <Route path="settings/notifications" element={<NotificationSettings />} />
+                    <Route path="settings/profile" element={<ProfileSettings />} /> {/* New Route */}
+                    <Route path="geo-blocking" element={<GeoBlocking />} /> {/* New Route for FR04 */}
+                    <Route path="settings/users" element={<UserManagement />} /> {/* New Route for FR01 */}
+                    <Route path="ai-insights" element={<AIInsights />} />
+                    <Route path="network" element={<Network />} />
+                    <Route path="reports" element={<Reports />} />
+                  </Routes>
+                </div>
+              </div>
             </RequireAuth>
-          }
-        >
-          <Route index element={<Overview />} />
-          <Route path="alerts" element={<Alerts />} />
-          <Route path="traffic" element={<Traffic />} />
-          <Route path="network" element={<Network />} />
-          <Route path="ai-insights" element={<AIInsights />} />
-          <Route path="reports" element={<Reports />} />
-          <Route path="settings" element={<Settings />} />
-        </Route>
+          } 
+        />
       </Routes>
     </BrowserRouter>
-  )
+  );
 }

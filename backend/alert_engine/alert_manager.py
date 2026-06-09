@@ -19,6 +19,8 @@ from backend.database.repository import (
     FlowFeatureRepository
 )
 from backend.notifications.email import email_service
+from backend.notifications.telegram import telegram_service
+from backend.notifications.discord import discord_service
 from backend.cache.redis_cache import get_cache
 
 logger = logging.getLogger(__name__)
@@ -34,7 +36,9 @@ class AlertManager:
         correlation_window: int = 60,
         enable_db_save: bool = True,
         enable_websocket: bool = True,
-        enable_email: bool = True
+        enable_email: bool = True,
+        enable_telegram: bool = True,
+        enable_discord: bool = True
     ):
         """
         Initialize alert manager
@@ -47,6 +51,8 @@ class AlertManager:
             enable_websocket: Enable WebSocket broadcast
             enable_email: Enable email alert dispatch (still gated by
                           ENABLE_EMAIL_ALERTS env var and severity/confidence)
+            enable_telegram: Enable Telegram alert dispatch
+            enable_discord: Enable Discord alert dispatch
         """
         self.confidence_threshold = confidence_threshold
         self.alert_cooldown = alert_cooldown
@@ -54,6 +60,8 @@ class AlertManager:
         self.enable_db_save = enable_db_save
         self.enable_websocket = enable_websocket
         self.enable_email = enable_email
+        self.enable_telegram = enable_telegram
+        self.enable_discord = enable_discord
         
         # Alert history for cooldown
         self.alert_history: Dict[str, datetime] = {}
@@ -130,11 +138,15 @@ class AlertManager:
             self._auto_add_to_blacklist(src_ip, reason="geo-blocked", auto_blocked=True)
             return None
 
-        # Check cooldown
-        if self._is_in_cooldown(src_ip):
-            logger.debug(f"IP in cooldown: {src_ip}")
+        # [NEW] Check Threat Intelligence (Placeholder for Stage 2)
+        # if self._check_external_intelligence(src_ip):
+        #     severity = 'critical' # Tăng mức độ nếu IP có danh tiếng xấu toàn cầu
+
+        # Check cooldown (Chỉ áp dụng cho việc tạo Alert record, không chặn logic xử lý)
+        # Tuy nhiên, nếu IP đã bị Blacklisted thì không cần tạo alert mới gây nhiễu
+        if src_ip in self.blacklist or self._is_in_cooldown(src_ip):
             return None
-        
+
         # Apply correlation logic
         adjusted_severity = self._apply_correlation(src_ip, attack_type, severity)
         
@@ -189,6 +201,14 @@ class AlertManager:
         if self.enable_email:
             email_service.dispatch_alert_email(alert)
 
+        # Dispatch Telegram notification
+        if self.enable_telegram:
+            telegram_service.dispatch_alert(alert)
+
+        # Dispatch Discord notification
+        if self.enable_discord:
+            discord_service.dispatch_alert(alert)
+
         return alert
     
     def _is_whitelisted(self, ip_address: str) -> bool:
@@ -207,21 +227,22 @@ class AlertManager:
         except Exception:
             return False
 
-    def _auto_add_to_blacklist(self, ip_address: str, reason: str = "auto-blocked", auto_blocked: bool = True):
+    def _auto_add_to_blacklist(self, ip_address: str, reason: str = "auto-blocked", auto_blocked: bool = True, duration_seconds: Optional[int] = 3600):
         """Add IP to blacklist in-memory and DB (non-blocking best-effort)."""
         if ip_address in self.blacklist:
             return
         self.blacklist.add(ip_address)
+        expires_at = datetime.utcnow() + timedelta(seconds=duration_seconds) if duration_seconds else None
+        
         try:
-            from backend.database.connection import SessionLocal
-            from backend.database.repository import BlacklistRepository
             db = SessionLocal()
             try:
                 existing = BlacklistRepository.get_by_ip(db, ip_address)
                 if not existing:
                     BlacklistRepository.create(
                         db, ip_address=ip_address,
-                        reason=reason, auto_blocked=auto_blocked
+                        reason=reason, auto_blocked=auto_blocked,
+                        expires_at=expires_at
                     )
             finally:
                 db.close()

@@ -5,12 +5,12 @@
  * giữ phiên qua các lần reload. Đây là cách đơn giản, đủ dùng cho dashboard
  * giám sát nội bộ.
  */
-
-const TOKEN_KEY = 'ids_jwt_token'
 const USER_KEY = 'ids_user'
 
+// Note: getToken() is no longer needed for API headers 
+// as the browser handles the HttpOnly cookie automatically.
 export function getToken() {
-  return localStorage.getItem(TOKEN_KEY) || ''
+  return ''; 
 }
 
 export function getUser() {
@@ -22,18 +22,36 @@ export function getUser() {
   }
 }
 
-export function setAuth(token, user) {
-  localStorage.setItem(TOKEN_KEY, token)
+export function setAuth(user) {
   if (user) {
     localStorage.setItem(USER_KEY, JSON.stringify(user))
   }
 }
 
 export function clearAuth() {
-  localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(USER_KEY)
 }
 
 export function isAuthenticated() {
-  return Boolean(getToken())
+  // Since JWT is in HttpOnly cookie, JS cannot access it.
+  // We use the presence of the user object as a proxy for session status.
+  return Boolean(getUser())
+}
+
+export async function logout() {
+  try {
+    // Import logoutRequest từ api.js
+    const { logoutRequest } = await import('./api'); 
+    await logoutRequest();
+  } catch (err) {
+    console.error("Failed to call logout endpoint", err)
+  }
+  clearAuth()
+  window.location.href = '/login'
+}
+
+export function hasRole(requiredRoles = []) {
+  const user = getUser()
+  if (!user) return false
+  return requiredRoles.includes(user.role)
 }

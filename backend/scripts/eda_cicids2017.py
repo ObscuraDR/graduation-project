@@ -18,6 +18,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.feature_selection import mutual_info_classif
+from sklearn.preprocessing import LabelEncoder
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -103,6 +105,55 @@ def correlation_analysis(df: pd.DataFrame, label_col: str = "Label") -> dict:
             high_corr_pairs, key=lambda x: abs(x["correlation"]), reverse=True
         ),
     }
+
+
+def calculate_mutual_information(df: pd.DataFrame, label_col: str = "Label") -> dict:
+    """Tính toán Mutual Information Score giữa features và label."""
+    logger.info("Calculating Mutual Information scores (this may take a minute)...")
+    
+    feature_cols = [c for c in df.columns if c != label_col and df[c].dtype.kind in "biufc"]
+    X = df[feature_cols]
+    
+    # Encode label thành số để dùng với mutual_info_classif
+    le = LabelEncoder()
+    y = le.fit_transform(df[label_col])
+    
+    # Tính toán MI scores
+    scores = mutual_info_classif(X, y, random_state=42)
+    
+    mi_results = {feat: round(score, 4) for feat, score in zip(feature_cols, scores)}
+    # Sắp xếp theo thứ tự giảm dần
+    return dict(sorted(mi_results.items(), key=lambda item: item[1], reverse=True))
+
+
+def plot_mutual_information(mi_scores: dict):
+    """Vẽ biểu đồ Mutual Information Score."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return
+
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    
+    features = list(mi_scores.keys())
+    scores = list(mi_scores.values())
+
+    plt.figure(figsize=(12, 8))
+    bars = plt.barh(features[::-1], scores[::-1], color="#10b981")
+    plt.xlabel("Mutual Information Score")
+    plt.title("Feature Dependency with Label (Mutual Information)")
+    
+    for bar in bars:
+        plt.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height()/2, 
+                 f'{bar.get_width():.3f}', va='center', fontsize=9)
+
+    plt.tight_layout()
+    out = FIGURES_DIR / "mutual_information.png"
+    plt.savefig(out, dpi=120)
+    plt.close()
+    logger.info(f"Saved → {out}")
 
 
 def plot_class_distribution(df: pd.DataFrame, label_col: str = "Label"):
@@ -225,6 +276,7 @@ def main():
         "class_distribution": class_distribution(df),
         "feature_statistics": feature_statistics(df),
         "correlation_analysis": correlation_analysis(df),
+        "mutual_information": calculate_mutual_information(df),
     }
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -237,6 +289,7 @@ def main():
         plot_class_distribution(df)
         plot_feature_distributions(df)
         plot_correlation_heatmap(df)
+        plot_mutual_information(report["mutual_information"])
 
     # Print summary
     cd = report["class_distribution"]

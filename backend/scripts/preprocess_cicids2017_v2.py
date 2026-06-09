@@ -12,12 +12,11 @@ Output:
 """
 
 import json
+from datetime import datetime
 import logging
 import sys
 from pathlib import Path
-
-import numpy as np
-import pandas as pd
+import polars as pl
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -90,7 +89,7 @@ LABEL_MAPPING = {
 }
 
 
-def load_all_csvs(input_dir: Path) -> pd.DataFrame:
+def load_all_csvs(input_dir: Path) -> pl.DataFrame:
     """Load tất cả CSV files (trừ dummy) và merge."""
     csvs = sorted([f for f in input_dir.glob("*.csv") if f.name != "dummy_data.csv"])
     if not csvs:
@@ -101,41 +100,50 @@ def load_all_csvs(input_dir: Path) -> pd.DataFrame:
     for f in csvs:
         size_mb = f.stat().st_size / 1024 / 1024
         logger.info(f"  Loading {f.name} ({size_mb:.1f} MB)...")
-        df = pd.read_csv(f, low_memory=False)
+        # Polars đọc CSV rất hiệu quả về bộ nhớ và tốc độ
+        df = pl.read_csv(f)
         logger.info(f"    Shape: {df.shape}")
         frames.append(df)
 
-    combined = pd.concat(frames, ignore_index=True)
+    combined = pl.concat(frames, how="vertical")
     logger.info(f"Combined shape: {combined.shape}")
     return combined
 
 
-def map_features(df: pd.DataFrame) -> pd.DataFrame:
+def map_features(df: pl.DataFrame) -> pl.DataFrame:
     """Map CICIDS2017 columns → 20 features của project."""
     logger.info("Mapping features...")
-    out = pd.DataFrame()
+    expressions = []
 
     for target, source in FEATURE_MAPPING.items():
         if source is not None and source in df.columns:
-            out[target] = df[source]
+            expressions.append(pl.col(source).alias(target))
         else:
-            out[target] = 0.0
+            expressions.append(pl.lit(0.0).alias(target))
 
     # Derive: unique_dst_ports — chỉ có 1 dst_port per flow trong CICIDS2017
-    out["unique_dst_ports"] = 1
+    expressions.append(pl.lit(1).alias("unique_dst_ports"))
 
     # Derive: fwd_byte_rate = total_fwd_bytes / flow_duration (microseconds)
-    flow_dur_sec = df["Flow Duration"].replace(0, 1) / 1_000_000  # μs → s
-    out["fwd_byte_rate"] = df["Total Length of Fwd Packet"] / flow_dur_sec
-    out["bwd_byte_rate"] = df["Total Length of Bwd Packet"] / flow_dur_sec
+    # Xử lý chia cho 0: nếu Flow Duration = 0, dùng 1 để tránh lỗi, sau đó chia cho 1_000_000 để chuyển sang giây
+    flow_dur_sec = (
+        pl.when(pl.col("Flow Duration") == 0)
+        .then(pl.lit(1))
+        .otherwise(pl.col("Flow Duration"))
+        / 1_000_000
+    )
+    expressions.append((pl.col("Total Length of Fwd Packet") / flow_dur_sec).alias("fwd_byte_rate"))
+    expressions.append((pl.col("Total Length of Bwd Packet") / flow_dur_sec).alias("bwd_byte_rate"))
+
+    out = df.select(expressions)
 
     # Convert flow_duration from microseconds to seconds (project format)
-    out["flow_duration"] = out["flow_duration"] / 1_000_000
+    out = out.with_columns((pl.col("flow_duration") / 1_000_000).alias("flow_duration"))
 
     return out
 
 
-def map_labels(df: pd.DataFrame) -> pd.Series:
+def map_labels(df: pl.DataFrame) -> pl.Series:
     """Map labels CICIDS2017 → project labels."""
     if "Label" not in df.columns:
         raise ValueError("'Label' column not found")
@@ -143,50 +151,49 @@ def map_labels(df: pd.DataFrame) -> pd.Series:
     labels = df["Label"].astype(str).str.strip()
 
     # Apply mapping
-    mapped = labels.map(LABEL_MAPPING)
+    mapped = labels.map_dict(LABEL_MAPPING)
 
     # Log unmapped labels
-    unmapped = labels[mapped.isna()].unique()
+    unmapped = labels.filter(mapped.is_null()).unique().to_list()
     if len(unmapped) > 0:
         logger.warning(f"Unmapped labels (sẽ thành 'Abnormal'): {unmapped}")
-        mapped = mapped.fillna("Abnormal")
+        mapped = mapped.fill_null("Abnormal")
 
     return mapped
 
 
-def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+def clean_data(df: pl.DataFrame) -> pl.DataFrame:
     """Clean NaN, Inf, negative values."""
     logger.info("Cleaning data...")
     n_before = len(df)
 
     # Replace inf
-    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.with_columns(pl.all().replace_inf_with_nan())
 
     # Drop rows với NaN
-    df = df.dropna()
+    df = df.drop_nulls()
 
     # Clip negative values to 0
-    feature_cols = [c for c in df.columns if c != "Label"]
-    df[feature_cols] = df[feature_cols].clip(lower=0)
+    df = df.with_columns([pl.col(c).clip_min(0) for c in df.columns if c != "Label"])
 
     n_after = len(df)
     logger.info(f"  Dropped {n_before - n_after} rows ({n_before} → {n_after})")
     return df
 
 
-def balance_dataset(df: pd.DataFrame, max_samples_per_class: int = 50000) -> pd.DataFrame:
-    """Balance dataset: cap mỗi class tối đa N samples (CICIDS2017 rất imbalanced)."""
+def balance_dataset(df: pl.DataFrame, max_samples_per_class: int = 50000) -> pl.DataFrame:
+    """Balance dataset: giới hạn mỗi class tối đa N samples (CICIDS2017 rất imbalanced)."""
     logger.info(f"Balancing dataset (max {max_samples_per_class:,} per class)...")
     balanced_frames = []
-    for label in df["Label"].unique():
-        subset = df[df["Label"] == label]
+    for label in df.get_column("Label").unique().to_list():
+        subset = df.filter(pl.col("Label") == label)
         if len(subset) > max_samples_per_class:
-            subset = subset.sample(n=max_samples_per_class, random_state=42)
+            subset = subset.sample(n=max_samples_per_class, seed=42, shuffle=True)
         balanced_frames.append(subset)
         logger.info(f"  {label:15s}: {len(subset):,} samples")
 
-    balanced = pd.concat(balanced_frames, ignore_index=True)
-    return balanced.sample(frac=1, random_state=42).reset_index(drop=True)
+    balanced = pl.concat(balanced_frames, how="vertical")
+    return balanced.sample(fraction=1.0, seed=42, shuffle=True)
 
 
 def main():
@@ -198,38 +205,45 @@ def main():
     # Load all CSVs
     raw = load_all_csvs(INPUT_DIR)
 
-    # Distribution gốc
+    # Phân bố nhãn gốc
     if "Label" in raw.columns:
-        logger.info(f"Raw label distribution:\n{raw['Label'].value_counts().to_string()}")
+        logger.info(f"Raw label distribution:\n{raw.group_by('Label').len().sort('len', descending=True).to_string()}")
 
     # Map features
     features = map_features(raw)
-    features["Label"] = map_labels(raw)
+    features = features.with_columns(map_labels(raw).alias("Label"))
 
-    # Distribution sau mapping
-    logger.info(f"\nMapped label distribution:\n{features['Label'].value_counts().to_string()}")
+    # Phân bố nhãn sau mapping
+    logger.info(f"\nMapped label distribution:\n{features.group_by('Label').len().sort('len', descending=True).to_string()}")
 
     # Clean
     features = clean_data(features)
 
     # Balance
-    features = balance_dataset(features)
+    # Chỉ cân bằng nếu có cột 'Label'
+    if "Label" in features.columns:
+        features = balance_dataset(features)
+    else:
+        logger.warning("No 'Label' column found after cleaning, skipping dataset balancing.")
 
     # Save processed CSV
     OUTPUT_CSV.parent.mkdir(parents=True, exist_ok=True)
-    features.to_csv(OUTPUT_CSV, index=False)
+    features.write_csv(OUTPUT_CSV)
     logger.info(f"\n✅ Saved processed CSV → {OUTPUT_CSV}")
     logger.info(f"   Shape: {features.shape}")
 
     # Save report
+    class_distribution_df = features.group_by("Label").len().rename({"len": "count"})
+    class_distribution_dict = {row["Label"]: row["count"] for row in class_distribution_df.iter_rows(named=True)}
+
     report = {
-        "preprocessing_date": pd.Timestamp.now().isoformat(),
+        "preprocessing_date": datetime.now().isoformat(),
         "source_files": [f.name for f in INPUT_DIR.glob("*.csv") if f.name != "dummy_data.csv"],
         "raw_rows": len(raw),
         "processed_rows": len(features),
         "n_features": 20,
         "feature_names": list(FEATURE_MAPPING.keys()),
-        "class_distribution": features["Label"].value_counts().to_dict(),
+        "class_distribution": class_distribution_dict,
         "label_mapping_applied": {k: v for k, v in LABEL_MAPPING.items() if v},
     }
 

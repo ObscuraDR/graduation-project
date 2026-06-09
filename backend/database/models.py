@@ -135,6 +135,59 @@ class AttackAlert(Base):
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+# Cấu trúc đề xuất cho backend/database/models.py
+class Blacklist(Base):
+    __tablename__ = "blacklist"
+    id = Column(Integer, primary_key=True, index=True)
+    ip_address = Column(String, unique=True, index=True, nullable=False)
+    reason = Column(String)
+    blocked_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)  # Null nghĩa là chặn vĩnh viễn
+    is_active = Column(Boolean, default=True)
+    auto_blocked = Column(Boolean, default=True)
+
+
+class Server(Base):
+    """Model cho các máy chủ được quản lý bởi IDS."""
+    __tablename__ = "servers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False, index=True)
+    ip_address = Column(String(45), unique=True, nullable=False, index=True)
+    os = Column(String(50), nullable=True)  # e.g., "Linux", "Windows"
+    description = Column(Text, nullable=True)
+    status = Column(String(20), default="offline")  # online, offline, warning
+    cpu_usage = Column(Float, nullable=True)  # %
+    ram_usage = Column(Float, nullable=True)  # %
+    disk_usage = Column(Float, nullable=True) # %
+    firewall_status = Column(String(50), nullable=True) # e.g., "active", "inactive"
+    last_seen = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ServerMetricHistory(Base):
+    """Model lưu trữ lịch sử các chỉ số của máy chủ."""
+    __tablename__ = "server_metric_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    server_id = Column(Integer, ForeignKey("servers.id"), nullable=False, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    cpu_usage = Column(Float, nullable=False)
+    ram_usage = Column(Float, nullable=False)
+    disk_usage = Column(Float, nullable=False)
+    firewall_status = Column(String(50), nullable=True)
+    status = Column(String(20), nullable=False)
+
+class SystemSetting(Base):
+    """Bảng lưu trữ cấu hình hệ thống động (Notifications, GeoIP, v.v.)"""
+    __tablename__ = "system_settings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(100), unique=True, nullable=False, index=True)
+    value = Column(JSON, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class AttackHistory(Base):
     """Attack history model for tracking attack patterns over time"""
     __tablename__ = "attack_history"

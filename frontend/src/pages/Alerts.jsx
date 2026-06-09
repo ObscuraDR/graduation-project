@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle, Trash2, RefreshCw, Eye, Download } from 'lu
 import SeverityBadge from '../components/SeverityBadge'
 import AlertDetailModal from '../components/AlertDetailModal'
 import { fetchAlerts, resolveAlert, deleteAlert } from '../lib/api'
+import { hasRole } from '../lib/auth'
 
 export default function Alerts() {
   const [alerts, setAlerts] = useState([])
@@ -187,7 +188,7 @@ export default function Alerts() {
                       >
                         <Eye className="w-4 h-4" />
                       </button>
-                      {!alert.is_resolved && (
+                      {!alert.is_resolved && hasRole(['admin', 'security_analyst']) && (
                         <button
                           onClick={(e) => handleResolve(alert.alert_id, e)}
                           className="p-1.5 text-green-600 hover:bg-green-50 rounded"
@@ -196,13 +197,15 @@ export default function Alerts() {
                           <CheckCircle className="w-4 h-4" />
                         </button>
                       )}
-                      <button
-                        onClick={(e) => handleDelete(alert.alert_id, e)}
-                        className="p-1.5 text-red-500 hover:bg-red-50 rounded"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {hasRole(['admin']) && (
+                        <button
+                          onClick={(e) => handleDelete(alert.alert_id, e)}
+                          className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

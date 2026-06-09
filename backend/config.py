@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     
+    # Auth Security (Account Lockout)
+    auth_max_failed_attempts: int = 5
+    auth_lockout_minutes: int = 15
+    enable_account_lockout: bool = True
+
     # CORS
     cors_origins_str: str = ""
 
@@ -113,6 +118,27 @@ class Settings(BaseSettings):
     # Minimum seconds between emails for the same attacker IP (anti-spam)
     email_cooldown_seconds: int = 60
     
+    # Log Scanner
+    enable_log_scanner: bool = False
+    auth_log_path: str = "/var/log/auth.log" # Or /var/log/secure for RHEL/CentOS
+    ssh_brute_force_threshold: int = 5
+    ssh_brute_force_window_seconds: int = 60
+    log_scan_interval_seconds: int = 5
+
+    # Cloudflare Edge Firewall
+    enable_cloudflare_firewall: bool = False
+    cloudflare_api_token: str = ""
+    cloudflare_zone_id: str = ""
+
+    # Telegram alerts
+    enable_telegram_alerts: bool = False
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
+    # Discord alerts
+    enable_discord_alerts: bool = False
+    discord_webhook_url: str = ""
+
     # Alert Thresholds
     alert_threshold_critical: float = 0.9
     alert_threshold_high: float = 0.7
@@ -122,6 +148,10 @@ class Settings(BaseSettings):
     model_dir: str = "./backend/models"
     rf_model_path: str = "./backend/models/random_forest.pkl"
     xgb_model_path: str = "./backend/models/xgboost.pkl"
+
+    # Server Management
+    server_offline_threshold_seconds: int = 30  # Thời gian tối đa không nhận được heartbeat từ agent
+    server_status_check_interval_seconds: int = 10 # Tần suất worker kiểm tra
     lstm_model_path: str = "./backend/models/lstm.pkl"
     ensemble_model_path: str = "./backend/models/ensemble.pkl"
     

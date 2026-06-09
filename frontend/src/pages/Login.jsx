@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { Shield, Lock, User, Loader2 } from 'lucide-react'
 import { loginRequest } from '../lib/api'
 import { setAuth } from '../lib/auth'
+import axios from 'axios'
 
 export default function Login() {
   const [username, setUsername] = useState('')
@@ -17,14 +18,27 @@ export default function Login() {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (!username.trim() || !password) {
+      setError('Vui lòng nhập đầy đủ thông tin')
+      return
+    }
+
     setError('')
     setLoading(true)
     try {
-      const data = await loginRequest(username.trim(), password)
+      // Sử dụng OAuth2 Form data chuẩn
+      const formData = new FormData()
+      formData.append('username', username.trim())
+      formData.append('password', password)
+      
+      const response = await axios.post('/api/auth/login', formData)
+      const data = response.data
       setAuth(data.access_token, data.user)
       navigate(from, { replace: true })
     } catch (err) {
-      if (err.response?.status === 401) {
+      if (err.response?.status === 403) {
+        setError(err.response.data?.detail || 'Tài khoản của bạn đã bị khóa tạm thời.')
+      } else if (err.response?.status === 401) {
         setError('Sai tên đăng nhập hoặc mật khẩu')
       } else {
         setError('Không kết nối được tới máy chủ. Kiểm tra backend.')

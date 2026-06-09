@@ -11,7 +11,7 @@ from sqlalchemy import and_, or_
 
 from backend.database.models import (
     TrafficFlow, FlowFeature, AttackAlert, AttackHistory,
-    Model, Whitelist, User, Blacklist, GeoBlockRule, SecurityReport
+    Model, Whitelist, User, Blacklist, GeoBlockRule, SecurityReport, Server, ServerMetricHistory
 )
 
 logger = logging.getLogger(__name__)
@@ -322,6 +322,25 @@ class BlacklistRepository:
         ).all()
 
     @staticmethod
+    def get_expired(db: Session) -> List[Blacklist]:
+        """Lấy danh sách các IP đã hết hạn chặn nhưng vẫn đang ở trạng thái active."""
+        return db.query(Blacklist).filter(
+            Blacklist.is_active == True,
+            Blacklist.expires_at <= datetime.utcnow()
+        ).all()
+
+    @staticmethod
+    def batch_deactivate(db: Session, ip_addresses: List[str]) -> int:
+        """Cập nhật trạng thái không hoạt động cho danh sách IP trong một transaction."""
+        if not ip_addresses:
+            return 0
+        updated = db.query(Blacklist).filter(
+            Blacklist.ip_address.in_(ip_addresses)
+        ).update({"is_active": False}, synchronize_session=False)
+        db.commit()
+        return updated
+
+    @staticmethod
     def deactivate(db: Session, ip_address: str) -> bool:
         entry = BlacklistRepository.get_by_ip(db, ip_address)
         if not entry:
@@ -387,3 +406,228 @@ class SecurityReportRepository:
         return db.query(SecurityReport).order_by(
             SecurityReport.created_at.desc()
         ).limit(limit).all()
+    
+    @staticmethod
+    def get_by_report_id(db: Session, report_id: str) -> Optional[SecurityReport]:
+        return db.query(SecurityReport).filter(SecurityReport.report_id == report_id).first()
+
+
+# --- Server Management ---
+
+
+
+class ServerRepository:
+    """Repository cho các thao tác quản lý máy chủ."""
+
+    @staticmethod
+    def create_server(db: Session, name: str, ip_address: str, os: Optional[str] = None,
+                      description: Optional[str] = None) -> Server:
+        """Tạo một máy chủ mới."""
+        try:
+            server = Server(name=name, ip_address=ip_address, os=os, description=description)
+            db.add(server)
+            db.commit()
+            db.refresh(server)
+            logger.info(f"Created server: {name} ({ip_address})")
+            return server
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error creating server {name}: {e}")
+            raise
+
+    @staticmethod
+    def get_server_by_id(db: Session, server_id: int) -> Optional[Server]:
+        """Lấy thông tin máy chủ theo ID."""
+        return db.query(Server).filter(Server.id == server_id).first()
+
+    @staticmethod
+    def get_server_by_ip(db: Session, ip_address: str) -> Optional[Server]:
+        """Lấy thông tin máy chủ theo địa chỉ IP."""
+        return db.query(Server).filter(Server.ip_address == ip_address).first()
+
+    @staticmethod
+    def get_all_servers(db: Session) -> List[Server]:
+        """Lấy tất cả các máy chủ."""
+        return db.query(Server).order_by(Server.name).all()
+
+    @staticmethod
+    def update_server_status(db: Session, server_id: int, new_status: str) -> Optional[Server]:
+        """Cập nhật trạng thái của một máy chủ."""
+        server = ServerRepository.get_server_by_id(db, server_id)
+        if not server:
+            return None
+        if server.status != new_status: # Chỉ cập nhật nếu trạng thái thay đổi
+            server.status = new_status
+            db.commit()
+            db.refresh(server)
+            logger.info(f"Updated server {server.name} ({server.ip_address}) status to: {new_status}")
+        return server
+
+    @staticmethod
+    def update_server(db: Session, server_id: int, name: Optional[str] = None,
+                      ip_address: Optional[str] = None, os: Optional[str] = None,
+                      description: Optional[str] = None, status: Optional[str] = None,
+                      cpu_usage: Optional[float] = None, ram_usage: Optional[float] = None,
+                      disk_usage: Optional[float] = None, firewall_status: Optional[str] = None) -> Optional[Server]:
+        """Cập nhật thông tin máy chủ."""
+        try:
+            server = ServerRepository.get_server_by_id(db, server_id)
+            if not server:
+                return None
+            
+            update_data = {k: v for k, v in locals().items() if v is not None and k not in ['db', 'server_id', 'self']}
+            for key, value in update_data.items():
+                setattr(server, key, value)
+            server.last_seen = datetime.utcnow() # Cập nhật last_seen khi có bất kỳ update nào
+            db.commit()
+            db.refresh(server)
+            logger.info(f"Updated server: {server.name} ({server.ip_address})")
+            return server
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error updating server {server_id}: {e}")
+            raise
+
+    @staticmethod
+    def delete_server(db: Session, server_id: int) -> bool:
+        """Xóa một máy chủ."""
+        try:
+            server = ServerRepository.get_server_by_id(db, server_id)
+            if not server:
+                return False
+            db.delete(server)
+            db.commit()
+            logger.info(f"Deleted server: {server.name} ({server.ip_address})")
+            return True
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error deleting server {server_id}: {e}")
+            raise
+
+
+class ServerMetricHistoryRepository:
+    """Repository cho lịch sử các chỉ số của máy chủ."""
+
+    @staticmethod
+    def create_history_entry(db: Session, server_id: int, cpu_usage: float, ram_usage: float,
+                             disk_usage: float, status: str, firewall_status: Optional[str] = None) -> ServerMetricHistory:
+        """Tạo một bản ghi lịch sử chỉ số mới."""
+        try:
+            entry = ServerMetricHistory(
+                server_id=server_id,
+                cpu_usage=cpu_usage,
+                ram_usage=ram_usage,
+                disk_usage=disk_usage,
+                status=status,
+                firewall_status=firewall_status
+            )
+            db.add(entry)
+            db.commit()
+            db.refresh(entry)
+            return entry
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error creating server metric history for server {server_id}: {e}")
+            raise
+
+    @staticmethod
+    def get_history_for_server(db: Session, server_id: int, limit: int = 100) -> List[ServerMetricHistory]:
+        """Lấy lịch sử chỉ số của một máy chủ."""
+        return db.query(ServerMetricHistory).filter(
+            ServerMetricHistory.server_id == server_id
+        ).order_by(ServerMetricHistory.timestamp.desc()).limit(limit).all()
+
+
+class SettingRepository:
+    """Repository quản lý cấu hình hệ thống"""
+    
+    @staticmethod
+    def get_value(db: Session, key: str, default: Any = None) -> Any:
+        setting = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+        return setting.value if setting else default
+
+    @staticmethod
+    def update_value(db: Session, key: str, value: Any) -> SystemSetting:
+        setting = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+        if setting:
+            setting.value = value
+        else:
+            setting = SystemSetting(key=key, value=value)
+            db.add(setting)
+        db.commit()
+        db.refresh(setting)
+        return setting
+
+class UserRepository:
+    """Repository quản lý người dùng và xác thực"""
+
+    @staticmethod
+    def get_by_username(db: Session, username: str) -> Optional[User]:
+        return db.query(User).filter(User.username == username).first()
+
+    @staticmethod
+    def get_by_email(db: Session, email: str) -> Optional[User]:
+        return db.query(User).filter(User.email == email).first()
+
+    @staticmethod
+    def get_all(db: Session) -> List[User]:
+        return db.query(User).all()
+
+    @staticmethod
+    def create(db: Session, user_data: Dict[str, Any]) -> User:
+        import bcrypt
+        pwd = user_data['password'].encode('utf-8')[:72]
+        user = User( # Assuming User model has email field
+            username=user_data['username'],
+            email=user_data.get('email'),
+            password_hash=bcrypt.hashpw(pwd, bcrypt.gensalt()).decode('utf-8'),
+            role=user_data.get('role', 'operator')
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user
+
+    @staticmethod
+    def get_by_id(db: Session, user_id: int) -> Optional[User]:
+        return db.query(User).filter(User.id == user_id).first()
+
+    @staticmethod
+    def update_password(db: Session, user_id: int, new_password: str):
+        import bcrypt
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            pwd = new_password.encode('utf-8')[:72]
+            user.password_hash = bcrypt.hashpw(pwd, bcrypt.gensalt()).decode('utf-8')
+            db.commit()
+            return True
+        return False
+
+    @staticmethod
+    def update_role(db: Session, user_id: int, new_role: str):
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            user.role = new_role
+            db.commit()
+            return True
+        return False
+
+    @staticmethod
+    def reset_password(db: Session, user_id: int, new_password_hash: str):
+        """Đặt lại mật khẩu cho người dùng bằng password hash mới."""
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            user.password_hash = new_password_hash
+            db.commit()
+            db.refresh(user)
+            return True
+        return False
+
+    @staticmethod
+    def delete(db: Session, user_id: int):
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            db.delete(user)
+            db.commit()
+            return True
+        return False

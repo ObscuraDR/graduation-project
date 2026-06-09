@@ -41,6 +41,8 @@ async def lifespan(app: FastAPI):
     from backend.api.routes import sniffer as sniffer_routes
     from backend.api.websocket import get_broadcast_bridge
     from backend.alert_engine.alert_manager import get_alert_manager
+    from backend.api.workers.server_status_worker import check_server_status_task
+    from backend.api.workers.firewall_worker import cleanup_expired_blacklist_task
 
     logger.info("Starting IDS Backend...")
 
@@ -80,12 +82,30 @@ async def lifespan(app: FastAPI):
 
     # Lưu reference đến main event loop cho email service (thread-safe dispatch)
     from backend.notifications.email import email_service
+    from backend.notifications.telegram import telegram_service
+    from backend.notifications.discord import discord_service
     email_service.set_event_loop(asyncio.get_running_loop())
+    telegram_service.set_event_loop(asyncio.get_running_loop())
+    discord_service.set_event_loop(asyncio.get_running_loop())
+    logger.info("Notification services event loops set.")
 
+    # Start background cleanup worker cho Firewall (FR03)
+    cleanup_task = asyncio.create_task(cleanup_expired_blacklist_task(interval_seconds=60))
+    logger.info("Firewall cleanup worker started.")
+
+    # Start background worker cho Server Status (FR02)
+    server_status_task = asyncio.create_task(check_server_status_task())
+    logger.info("Server status checker worker started.")
     yield
 
     # Shutdown: Cleanup
     logger.info("Shutting down IDS Backend...")
+
+    # Stop firewall cleanup task
+    cleanup_task.cancel()
+
+    # Stop server status checker task
+    server_status_task.cancel()
 
     # Stop pipeline if running
     if sniffer_routes.pipeline_coordinator and sniffer_routes.pipeline_coordinator.is_running:
@@ -129,9 +149,9 @@ if not _cors_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_credentials=True,
+    allow_credentials=True, # Bắt buộc phải là True
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Set-Cookie", "X-API-Key", "X-CSRF-Token", "Authorization"],
 )
 logger.info("CORS origins: %s (environment=%s)", _cors_origins, settings.environment)
 
@@ -228,7 +248,9 @@ from backend.api.routes.traffic import traffic_router
 from backend.api.routes.sniffer import sniffer_router
 from backend.api.routes.xai import xai_router
 from backend.api.routes.demo import demo_router
+from backend.api.routes.servers import router as servers_router
 from backend.api.auth import auth_router
+from backend.api.routes.settings import router as settings_router
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(alerts_router, prefix="/api/alerts", tags=["alerts"])
@@ -242,7 +264,9 @@ app.include_router(stats_router, prefix="/api/stats", tags=["statistics"])
 app.include_router(sniffer_router, prefix="/api/sniffer", tags=["sniffer"])
 app.include_router(traffic_router, prefix="/api/traffic", tags=["traffic"])
 app.include_router(xai_router, prefix="/api/xai", tags=["xai"])
+app.include_router(servers_router)
 app.include_router(demo_router, prefix="/api/demo", tags=["demo"])
+app.include_router(settings_router)
 
 
 # WebSocket endpoint for real-time updates
