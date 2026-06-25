@@ -3,6 +3,14 @@ IDS Backend - Main Application
 Machine Learning-based Intrusion Detection System
 """
 
+import sys
+from pathlib import Path
+
+# Thêm thư mục gốc của dự án vào sys.path để nhận diện package 'backend'
+project_root = str(Path(__file__).parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -41,8 +49,10 @@ async def lifespan(app: FastAPI):
     from backend.api.routes import sniffer as sniffer_routes
     from backend.api.websocket import get_broadcast_bridge
     from backend.alert_engine.alert_manager import get_alert_manager
-    from backend.api.workers.server_status_worker import check_server_status_task
-    from backend.api.workers.firewall_worker import cleanup_expired_blacklist_task
+    from backend.database.server_status_worker import check_server_status_task
+    from backend.database.ueba_worker import ueba_detection_task
+    from backend.database.firewall_worker import cleanup_expired_blacklist_task
+    from backend.config import settings as app_settings
 
     logger.info("Starting IDS Backend...")
 
@@ -54,10 +64,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
 
+    # Seed initial data (idempotent — only runs if tables are empty)
+    try:
+        from backend.database.init_db import seed_data
+        seed_data()
+        logger.info("Database seeded successfully")
+    except Exception as e:
+        logger.warning(f"Database seeding skipped: {e}")
+
     # Sync whitelist + blacklist + geo-block from DB into AlertManager
     try:
         from backend.database.connection import SessionLocal
-        from backend.database.repository import BlacklistRepository, GeoBlockRepository
+        from backend.database.repository import BlacklistRepository, GeoBlockRepository, GeoAllowRepository, GeoWatchRepository
         from backend.database.models import Whitelist
         _db = SessionLocal()
         alert_mgr = get_alert_manager()
@@ -68,6 +86,10 @@ async def lifespan(app: FastAPI):
                 alert_mgr.add_to_blacklist(row.ip_address)
             for code in GeoBlockRepository.get_active_codes(_db):
                 alert_mgr.add_geo_block(code)
+            for code in GeoAllowRepository.get_active_codes(_db):
+                alert_mgr.add_geo_allow(code)
+            for code in GeoWatchRepository.get_active_codes(_db):
+                alert_mgr.add_geo_watch(code)
             logger.info("Synced whitelist/blacklist/geoblock into AlertManager")
         finally:
             _db.close()
@@ -96,6 +118,26 @@ async def lifespan(app: FastAPI):
     # Start background worker cho Server Status (FR02)
     server_status_task = asyncio.create_task(check_server_status_task())
     logger.info("Server status checker worker started.")
+
+    # Start background worker cho UEBA (Hành vi người dùng)
+    ueba_task = asyncio.create_task(ueba_detection_task(interval_seconds=60))
+    logger.info("UEBA Detection worker started.")
+
+    # Start LogScanner for SSH brute-force detection (optional, env-gated)
+    log_scanner = None
+    if app_settings.enable_log_scanner:
+        try:
+            from backend.scripts.log_scanner import LogScanner
+            log_scanner = LogScanner(get_alert_manager())
+            if log_scanner._check_log_file_access():
+                log_scanner.start()
+                logger.info("LogScanner started.")
+            else:
+                log_scanner = None
+                logger.warning("LogScanner disabled — cannot read auth log file.")
+        except Exception as e:
+            logger.warning("Could not start LogScanner: %s", e)
+
     yield
 
     # Shutdown: Cleanup
@@ -106,6 +148,13 @@ async def lifespan(app: FastAPI):
 
     # Stop server status checker task
     server_status_task.cancel()
+
+    # Stop UEBA task
+    ueba_task.cancel()
+
+    if log_scanner is not None:
+        log_scanner.stop()
+        log_scanner.join(timeout=5)
 
     # Stop pipeline if running
     if sniffer_routes.pipeline_coordinator and sniffer_routes.pipeline_coordinator.is_running:
@@ -165,13 +214,16 @@ app.add_middleware(RateLimitMiddleware)
 async def health_check():
     """Health check endpoint"""
     from backend.api.routes import sniffer as sniffer_routes
+    from backend.demo.attack_replay import get_attack_replay_demo
 
     coordinator = sniffer_routes.pipeline_coordinator
+    is_demo_running = get_attack_replay_demo().is_running
+
     return {
         "status": "healthy",
         "service": "IDS Backend",
         "version": "1.0.0",
-        "pipeline_running": coordinator.is_running if coordinator else False,
+        "pipeline_running": (coordinator.is_running if coordinator else False) or is_demo_running,
     }
 
 
@@ -181,9 +233,10 @@ async def health_detailed():
     from datetime import datetime, timezone
     from backend.api.routes import sniffer as sniffer_routes
     import sqlalchemy
-    from backend.database.connection import engine, get_mongo_client
+    from backend.database.connection import engine
     from backend.cache.redis_cache import get_cache
     from backend.detection_engine.model_loader import get_model_loader
+    from backend.demo.attack_replay import get_attack_replay_demo
 
     # PostgreSQL
     postgres_ok = False
@@ -194,18 +247,10 @@ async def health_detailed():
     except Exception:
         pass
 
-    # Redis
-    redis_ok = False
+    # Cache (In-Memory)
+    cache_ok = False
     try:
-        redis_ok = get_cache().is_connected()
-    except Exception:
-        pass
-
-    # MongoDB
-    mongo_ok = False
-    try:
-        get_mongo_client().admin.command("ping")
-        mongo_ok = True
+        cache_ok = get_cache().is_connected()
     except Exception:
         pass
 
@@ -217,12 +262,13 @@ async def health_detailed():
         pass
 
     coordinator = sniffer_routes.pipeline_coordinator
+    is_demo_running = get_attack_replay_demo().is_running
+
     return {
         "postgres": {"connected": postgres_ok},
-        "redis": {"connected": redis_ok},
-        "mongo": {"connected": mongo_ok},
+        "cache": {"connected": cache_ok},
         "model_loaded": model_loaded,
-        "pipeline_running": coordinator.is_running if coordinator else False,
+        "pipeline_running": (coordinator.is_running if coordinator else False) or is_demo_running,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -236,7 +282,12 @@ async def metrics():
 
 
 # Include routers
-from backend.api.routes.security import blacklist_router, geoblock_router, reports_router
+from backend.api.routes.security import (
+    blacklist_router, geoblock_router, geoallow_router, geowatch_router, reports_router,
+)
+from backend.api.routes.logs import logs_router
+from backend.api.routes.audit import audit_router
+from backend.api.routes.geoip import geoip_router
 from backend.api.legacy_routes import (
     alerts_router,
     predictions_router,
@@ -250,7 +301,7 @@ from backend.api.routes.xai import xai_router
 from backend.api.routes.demo import demo_router
 from backend.api.routes.servers import router as servers_router
 from backend.api.auth import auth_router
-from backend.api.routes.settings import router as settings_router
+from backend.database.settings import router as settings_router
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(alerts_router, prefix="/api/alerts", tags=["alerts"])
@@ -259,6 +310,11 @@ app.include_router(models_router, prefix="/api/models", tags=["models"])
 app.include_router(whitelist_router, prefix="/api/whitelist", tags=["whitelist"])
 app.include_router(blacklist_router, prefix="/api/blacklist", tags=["blacklist"])
 app.include_router(geoblock_router, prefix="/api/geoblock", tags=["geoblock"])
+app.include_router(geoallow_router, prefix="/api/geoallow", tags=["geoallow"])
+app.include_router(geowatch_router, prefix="/api/geowatch", tags=["geowatch"])
+app.include_router(geoip_router, prefix="/api/geoip", tags=["geoip"])
+app.include_router(logs_router, prefix="/api/logs", tags=["logs"])
+app.include_router(audit_router, prefix="/api/audit", tags=["audit"])
 app.include_router(reports_router, prefix="/api/reports", tags=["reports"])
 app.include_router(stats_router, prefix="/api/stats", tags=["statistics"])
 app.include_router(sniffer_router, prefix="/api/sniffer", tags=["sniffer"])
@@ -288,7 +344,7 @@ async def websocket_endpoint(websocket: WebSocket):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "main:app",
+        "backend.main:app",
         host="0.0.0.0",
         port=8000,
         reload=True

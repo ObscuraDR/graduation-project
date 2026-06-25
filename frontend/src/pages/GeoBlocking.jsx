@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Globe, Ban, CheckCircle2, AlertCircle } from 'lucide-react';
-import axios from 'axios';
+import { Globe, Ban, CheckCircle2, AlertCircle, Search, Eye } from 'lucide-react';
 import { hasRole } from '../lib/auth';
+import {
+  lookupGeoIP, fetchGeoAllow, fetchGeoWatch, addGeoAllow, removeGeoAllow,
+  addGeoWatch, removeGeoWatch, fetchGeoBlocks, addGeoBlock, removeGeoBlock,
+} from '../lib/api';
 import Select from 'react-select'; // Cần cài đặt: npm install react-select
 
 const COMMON_COUNTRIES = [
@@ -141,6 +144,11 @@ const ALL_COUNTRIES = [
 
 export default function GeoBlocking() {
   const [geoRules, setGeoRules] = useState([]);
+  const [allowRules, setAllowRules] = useState([]);
+  const [watchRules, setWatchRules] = useState([]);
+  const [policyTab, setPolicyTab] = useState('block');
+  const [lookupIp, setLookupIp] = useState('');
+  const [lookupResult, setLookupResult] = useState(null);
   const [selectedCountry, setSelectedCountry] = useState(null);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [loading, setLoading] = useState(false);
@@ -155,14 +163,26 @@ export default function GeoBlocking() {
       flashMessage('error', 'Bạn không có quyền truy cập trang này.');
       return;
     }
-    fetchGeoBlocks();
+    loadGeoBlocks();
+    fetchGeoAllow().then(setAllowRules).catch(() => {});
+    fetchGeoWatch().then(setWatchRules).catch(() => {});
   }, []);
 
-  const fetchGeoBlocks = async () => {
+  const handleLookup = async () => {
+    if (!lookupIp.trim()) return;
+    try {
+      const result = await lookupGeoIP(lookupIp.trim());
+      setLookupResult(result);
+    } catch (err) {
+      flashMessage('error', 'Không tra cứu được IP');
+    }
+  };
+
+  const loadGeoBlocks = async () => {
     setLoading(true);
     try {
-      const response = await axios.get('/api/geoblock');
-      setGeoRules(response.data);
+      const data = await fetchGeoBlocks();
+      setGeoRules(Array.isArray(data) ? data : []);
     } catch (err) {
       flashMessage('error', 'Không thể tải quy tắc Geo Blocking: ' + (err.response?.data?.detail || err.message));
     } finally {
@@ -184,10 +204,10 @@ export default function GeoBlocking() {
     }
 
     try {
-      await axios.post('/api/geoblock', { country_code: cc, country_name: cn });
+      await addGeoBlock({ country_code: cc, country_name: cn });
       flashMessage('success', `Đã chặn truy cập từ ${cn || cc}.`);
       setSelectedCountry(null);
-      fetchGeoBlocks();
+      loadGeoBlocks();
     } catch (err) {
       flashMessage('error', 'Lỗi khi thêm quy tắc: ' + (err.response?.data?.detail || err.message));
     }
@@ -202,9 +222,9 @@ export default function GeoBlocking() {
       return;
     }
     try {
-      await axios.delete(`/api/geoblock/${countryCode}`);
+      await removeGeoBlock(countryCode);
       flashMessage('success', `Đã gỡ chặn truy cập từ ${countryCode}.`);
-      fetchGeoBlocks();
+      loadGeoBlocks();
     } catch (err) {
       flashMessage('error', 'Lỗi khi gỡ quy tắc: ' + (err.response?.data?.detail || err.message));
     }
@@ -236,6 +256,50 @@ export default function GeoBlocking() {
         </div>
       )}
 
+      <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 mb-6">
+        <h2 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+          <Search className="w-4 h-4 text-blue-400" /> Tra cứu quốc gia từ IP
+        </h2>
+        <div className="flex gap-2">
+          <input
+            value={lookupIp}
+            onChange={(e) => setLookupIp(e.target.value)}
+            placeholder="185.221.20.10"
+            className="flex-1 bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono text-sm"
+          />
+          <button type="button" onClick={handleLookup} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm">Tra cứu</button>
+        </div>
+        {lookupResult && (
+          <p className="mt-2 text-sm text-gray-300">
+            <span className="font-mono text-blue-400">{lookupResult.ip}</span>
+            {' → '}
+            <strong>{lookupResult.country_name || 'Unknown'}</strong>
+            {lookupResult.country_code && ` (${lookupResult.country_code})`}
+          </p>
+        )}
+      </div>
+
+      <div className="flex gap-2 mb-4 border-b border-gray-700">
+        {[
+          { id: 'block', label: 'Chặn', icon: Ban },
+          { id: 'allow', label: 'Cho phép', icon: CheckCircle2 },
+          { id: 'watch', label: 'Theo dõi', icon: Eye },
+        ].map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setPolicyTab(id)}
+            className={`flex items-center gap-1 px-4 py-2 text-sm border-b-2 -mb-px ${
+              policyTab === id ? 'border-purple-500 text-purple-300' : 'border-transparent text-gray-500'
+            }`}
+          >
+            <Icon className="w-4 h-4" /> {label}
+          </button>
+        ))}
+      </div>
+
+      {policyTab === 'block' && (
+      <>
       {/* Quick Add Section */}
       <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 shadow-lg mb-6">
         <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
@@ -332,6 +396,52 @@ export default function GeoBlocking() {
           <p className="text-gray-400">Chưa có quy tắc Geo Blocking nào đang hoạt động.</p>
         )}
       </div>
+      </>
+      )}
+
+      {policyTab === 'allow' && (
+        <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 space-y-4">
+          <h2 className="text-lg font-semibold text-green-400">Quốc gia được phép</h2>
+          <div className="flex flex-wrap gap-2">
+            {allowRules.map((r) => (
+              <span key={r.country_code} className="px-3 py-1 bg-green-900/30 border border-green-700 rounded-lg text-sm text-green-300">
+                {r.country_code} {r.country_name}
+                <button type="button" className="ml-2 text-red-400" onClick={() => removeGeoAllow(r.country_code).then(() => fetchGeoAllow().then(setAllowRules))}>✕</button>
+              </span>
+            ))}
+          </div>
+          <button
+            type="button"
+            disabled={!selectedCountry}
+            onClick={() => selectedCountry && addGeoAllow({ country_code: selectedCountry.value, country_name: selectedCountry.label.split('(')[0].trim() }).then(() => { fetchGeoAllow().then(setAllowRules); flashMessage('success', 'Đã thêm allow'); })}
+            className="px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-white text-sm disabled:opacity-50"
+          >
+            Thêm quốc gia đã chọn (dùng dropdown bên tab Chặn)
+          </button>
+        </div>
+      )}
+
+      {policyTab === 'watch' && (
+        <div className="bg-gray-800 p-6 rounded-xl border border-gray-700 space-y-4">
+          <h2 className="text-lg font-semibold text-yellow-400">Quốc gia theo dõi</h2>
+          <div className="flex flex-wrap gap-2">
+            {watchRules.map((r) => (
+              <span key={r.country_code} className="px-3 py-1 bg-yellow-900/30 border border-yellow-700 rounded-lg text-sm text-yellow-300">
+                {r.country_code} {r.country_name}
+                <button type="button" className="ml-2 text-red-400" onClick={() => removeGeoWatch(r.country_code).then(() => fetchGeoWatch().then(setWatchRules))}>✕</button>
+              </span>
+            ))}
+          </div>
+          <button
+            type="button"
+            disabled={!selectedCountry}
+            onClick={() => selectedCountry && addGeoWatch({ country_code: selectedCountry.value, country_name: selectedCountry.label.split('(')[0].trim() }).then(() => { fetchGeoWatch().then(setWatchRules); flashMessage('success', 'Đã thêm watch'); })}
+            className="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 rounded-lg text-white text-sm disabled:opacity-50"
+          >
+            Thêm quốc gia theo dõi (dùng dropdown bên tab Chặn)
+          </button>
+        </div>
+      )}
     </div>
   );
 }

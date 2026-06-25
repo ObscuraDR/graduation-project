@@ -1,0 +1,4 @@
+# Combined dependencies for full feature install
+-r requirements.txt
+-r requirements-optional.txt
+-r requirements-dev.txt

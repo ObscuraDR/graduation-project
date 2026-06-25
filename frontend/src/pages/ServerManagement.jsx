@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Server, PlusCircle, Edit, Trash2, RefreshCw, Cpu, Memory, HardDrive, ShieldCheck, WifiOff, LineChart as LineChartIcon } from 'lucide-react';
+import { Server, PlusCircle, Edit, Trash2, RefreshCw, Cpu, HardDrive, ShieldCheck, WifiOff, Activity, LineChart as LineChartIcon } from 'lucide-react';
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -138,7 +138,7 @@ export default function ServerManagement() {
                 <Cpu className="w-4 h-4 text-cyan-400" /> CPU: {server.cpu_usage ? `${server.cpu_usage.toFixed(1)}%` : 'N/A'}
               </div>
               <div className="flex items-center gap-2">
-                <Memory className="w-4 h-4 text-purple-400" /> RAM: {server.ram_usage ? `${server.ram_usage.toFixed(1)}%` : 'N/A'}
+                <Activity className="w-4 h-4 text-purple-400" /> RAM: {server.ram_usage ? `${server.ram_usage.toFixed(1)}%` : 'N/A'}
               </div>
               <div className="flex items-center gap-2">
                 <HardDrive className="w-4 h-4 text-orange-400" /> Disk: {server.disk_usage ? `${server.disk_usage.toFixed(1)}%` : 'N/A'}
@@ -317,7 +317,7 @@ export default function ServerManagement() {
                 {/* RAM Usage Chart */}
                 <div>
                   <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                    <Memory className="w-5 h-5 text-purple-400" /> Sử dụng RAM (%)
+                    <Activity className="w-5 h-5 text-purple-400" /> Sử dụng RAM (%)
                   </h3>
                   <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={historyData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>

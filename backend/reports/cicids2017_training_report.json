@@ -1,5 +1,5 @@
 {
-  "training_date": "2026-06-08T14:31:09.915593",
+  "training_date": "2026-06-18T15:47:01.181786",
   "dataset_path": "backend/data/cicids2017_processed.csv",
   "dataset_shape": [
     10000,
@@ -40,15 +40,15 @@
   "train_samples": 8000,
   "test_samples": 2000,
   "metrics": {
-    "accuracy": 0.9995,
-    "precision_macro": 0.9988,
-    "recall_macro": 0.9986,
-    "f1_macro": 0.9987,
+    "accuracy": 1.0,
+    "precision_macro": 1.0,
+    "recall_macro": 1.0,
+    "f1_macro": 1.0,
     "false_positive_rate": 0.0,
     "confusion_matrix": [
       [
-        139,
-        1,
+        140,
+        0,
         0,
         0,
         0
@@ -92,14 +92,14 @@
     "classification_report": {
       "Botnet": {
         "precision": 1.0,
-        "recall": 0.9928571428571429,
-        "f1-score": 0.996415770609319,
+        "recall": 1.0,
+        "f1-score": 1.0,
         "support": 140.0
       },
       "BruteForce": {
-        "precision": 0.9937888198757764,
+        "precision": 1.0,
         "recall": 1.0,
-        "f1-score": 0.9968847352024922,
+        "f1-score": 1.0,
         "support": 160.0
       },
       "DDoS": {
@@ -120,17 +120,17 @@
         "f1-score": 1.0,
         "support": 300.0
       },
-      "accuracy": 0.9995,
+      "accuracy": 1.0,
       "macro avg": {
-        "precision": 0.9987577639751553,
-        "recall": 0.9985714285714286,
-        "f1-score": 0.9986601011623624,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
         "support": 2000.0
       },
       "weighted avg": {
-        "precision": 0.9995031055900621,
-        "recall": 0.9995,
-        "f1-score": 0.9994998827588517,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
         "support": 2000.0
       }
     }

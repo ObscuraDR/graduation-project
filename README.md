@@ -15,8 +15,8 @@ cp .env.example .env
 python backend/ml/create_dummy_models.py
 
 # 3. Start databases + backend
-docker compose up -d postgres mongodb redis
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
+docker compose up -d postgres
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 
 # 4. Start frontend (terminal khác)
 cd frontend && npm install && npm run dev
@@ -139,7 +139,7 @@ z-sentinel-ids/
 # Development
 pip install -r requirements.txt
 python backend/ml/create_dummy_models.py
-uvicorn backend.main:app --reload
+python -m uvicorn backend.main:app --reload
 
 # Testing
 pytest backend/tests/ -v

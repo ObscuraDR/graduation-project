@@ -4,7 +4,7 @@ Logs flow summaries into the `flow_logs` collection.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ def log_flow_summary(
             "src_port": flow_stats.get("src_port"),
             "dst_port": flow_stats.get("dst_port"),
             "protocol": flow_stats.get("protocol"),
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "features": features,
         }
         db[COLLECTION].insert_one(doc)

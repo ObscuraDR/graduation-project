@@ -8,13 +8,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 from backend.database.connection import get_db
 from backend.database.models import AttackAlert, Model, Whitelist
 from backend.alert_engine.alert_manager import get_alert_manager
-from backend.ml.models import IDSModel
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +24,10 @@ models_router = APIRouter()
 whitelist_router = APIRouter()
 stats_router = APIRouter()
 
-# Global alert manager instance (replaces removed backend.alerts.engine.AlertEngine)
+# Global alert manager instance
 alert_manager = get_alert_manager()
-# Global model instance (will be loaded at startup)
-ml_model: Optional[IDSModel] = None
+# Global model instance (will be loaded at startup) — use None; IDSModel is legacy
+ml_model = None
 
 
 # ==================== Shared API schemas ====================
@@ -39,6 +38,10 @@ class ApiResponse(BaseModel):
     success: bool
     message: str
     data: Optional[Dict[str, Any]] = None
+
+    model_config = {
+        "protected_namespaces": ()
+    }
 
 
 class WhitelistEntryData(BaseModel):
@@ -51,6 +54,10 @@ class WhitelistEntryData(BaseModel):
     in_memory: bool = Field(
         description="True if IP is active in AlertManager in-memory whitelist"
     )
+
+    model_config = {
+        "protected_namespaces": ()
+    }
 
 
 class WhitelistAddRequest(BaseModel):
@@ -216,7 +223,7 @@ async def resolve_alert(
 
     alert.status = "resolved"
     alert.is_resolved = True
-    alert.resolved_at = datetime.utcnow()
+    alert.resolved_at = datetime.now(timezone.utc)
     if notes:
         alert.notes = notes
 
@@ -545,6 +552,74 @@ async def get_system_stats(db: Session = Depends(get_db)):
         "alerts_by_severity": severity_counts,
         "whitelist_count": db.query(Whitelist).count(),
         "model_count": db.query(Model).count(),
+    }
+
+
+@stats_router.get("/dashboard")
+async def get_dashboard_stats(
+    hours: int = Query(24, ge=1, le=720),
+    db: Session = Depends(get_db),
+):
+    """Extended dashboard KPIs and chart data."""
+    from datetime import timedelta
+    from collections import Counter, defaultdict
+    from backend.database.models import Blacklist, Server
+    from backend.api.routes.geoip import lookup_country
+
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    total_alerts = db.query(AttackAlert).count()
+    total_servers = db.query(Server).count()
+    blocked_ips = db.query(Blacklist).filter(Blacklist.is_active == True).count()
+    active_alerts = db.query(AttackAlert).filter(AttackAlert.status == "active").count()
+
+    recent = db.query(AttackAlert).filter(AttackAlert.timestamp >= since).all()
+
+    trend_map: Dict[str, int] = defaultdict(int)
+    ip_counts: Counter = Counter()
+    type_counts: Counter = Counter()
+    country_counts: Counter = Counter()
+    country_cache: Dict[str, str] = {}
+
+    for alert in recent:
+        ts = alert.timestamp
+        if ts:
+            bucket = ts.replace(minute=0, second=0, microsecond=0).isoformat()
+            trend_map[bucket] += 1
+        ip_counts[alert.source_ip] += 1
+        type_counts[alert.attack_type] += 1
+        ip = alert.source_ip
+        if ip not in country_cache:
+            code = lookup_country(ip) if ip else None
+            country_cache[ip] = code or "Unknown"
+        country_counts[country_cache[ip]] += 1
+
+    attack_trend = sorted(
+        [{"time": k, "count": v} for k, v in trend_map.items()],
+        key=lambda x: x["time"],
+    )
+    top_attack_ips = [
+        {"ip": ip, "count": cnt, "country": country_cache.get(ip, "Unknown")}
+        for ip, cnt in ip_counts.most_common(10)
+    ]
+    country_distribution = [
+        {"country": c, "count": n} for c, n in country_counts.most_common(15)
+    ]
+    threat_categories = [
+        {"type": t, "count": n} for t, n in type_counts.most_common(10)
+    ]
+
+    return {
+        "total_servers": total_servers,
+        "total_alerts": total_alerts,
+        "active_alerts": active_alerts,
+        "blocked_ips": blocked_ips,
+        "active_threats": active_alerts,
+        "attack_trend": attack_trend,
+        "top_attack_ips": top_attack_ips,
+        "country_distribution": country_distribution,
+        "threat_categories": threat_categories,
+        "period_hours": hours,
     }
 
 

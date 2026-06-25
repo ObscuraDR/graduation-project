@@ -7,14 +7,13 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from backend.database.connection import init_db, SessionLocal
 from backend.database.models import (
-    User, TrafficFlow, FlowFeature, AttackAlert,
-    AttackHistory, Model, Whitelist, Metric,
-    Blacklist, GeoBlockRule, SecurityReport
+    User, Whitelist
 )
+from backend.database.repository import UserRepository
 from backend.config import settings
 import logging
 
@@ -28,25 +27,20 @@ def seed_data():
     
     try:
         # Create default admin user
-        admin_user = db.query(User).filter(User.username == "admin").first()
+        admin_user = UserRepository.get_by_username(db, "admin")
         if not admin_user:
-            import bcrypt
-            password_bytes = "admin123".encode("utf-8")[:72]  # bcrypt max 72 bytes
-            password_hash = bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode("utf-8")
-
-            admin_user = User(
-                username="admin",
-                email="admin@ids-system.com",
-                password_hash=password_hash,
-                role="admin"
-            )
-            db.add(admin_user)
+            user_data = {
+                "username": "admin",
+                "email": "admin@zsentinel.local",
+                "password": "admin123",
+                "role": "admin"
+            }
+            UserRepository.create(db, user_data)
             logger.info("Created default admin user (username: admin, password: admin123)")
         
-        # Add default whitelist entries
+        # Add default whitelist entries (IPv4 only — IPv6 not supported by current validator)
         default_whitelist = [
             {"ip_address": "127.0.0.1", "port": None, "protocol": None, "reason": "Localhost"},
-            {"ip_address": "::1", "port": None, "protocol": None, "reason": "Localhost IPv6"},
         ]
         
         for entry in default_whitelist:

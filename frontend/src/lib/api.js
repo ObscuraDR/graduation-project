@@ -137,6 +137,72 @@ export async function fetchSystemStats() {
   return res.data
 }
 
+export async function fetchDashboardStats(hours = 24) {
+  const res = await api.get('/stats/dashboard', { params: { hours } })
+  return res.data
+}
+
+export async function fetchSecurityLogs(params = {}) {
+  const res = await api.get('/logs/', { params })
+  return res.data
+}
+
+export async function fetchAuditLogs(params = {}) {
+  const res = await api.get('/audit/', { params })
+  return res.data
+}
+
+export async function fetchBlockHistory(limit = 100, ipAddress = null) {
+  const params = { limit }
+  if (ipAddress) params.ip_address = ipAddress
+  const res = await api.get('/blacklist/history', { params })
+  return res.data
+}
+
+export async function lookupGeoIP(ip) {
+  const res = await api.get(`/geoip/lookup/${encodeURIComponent(ip)}`)
+  return res.data
+}
+
+export async function fetchGeoAllow() {
+  const res = await api.get('/geoallow/')
+  return res.data
+}
+
+export async function addGeoAllow(data) {
+  const res = await api.post('/geoallow/', data)
+  return res.data
+}
+
+export async function removeGeoAllow(countryCode) {
+  const res = await api.delete(`/geoallow/${countryCode}`)
+  return res.data
+}
+
+export async function fetchGeoWatch() {
+  const res = await api.get('/geowatch/')
+  return res.data
+}
+
+export async function addGeoWatch(data) {
+  const res = await api.post('/geowatch/', data)
+  return res.data
+}
+
+export async function removeGeoWatch(countryCode) {
+  const res = await api.delete(`/geowatch/${countryCode}`)
+  return res.data
+}
+
+export async function addBlacklistWithDuration(ip, reason, expiresHours) {
+  const res = await api.post('/blacklist/', {
+    ip_address: ip,
+    reason,
+    expires_hours: expiresHours,
+  })
+  return res.data
+}
+
 export async function fetchTrainingReport() {
   const res = await api.get('/stats/training-report')
   return res.data

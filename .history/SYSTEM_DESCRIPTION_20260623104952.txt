@@ -1,0 +1,75 @@
+================================================================================
+                MÔ TẢ HỆ THỐNG Z-SENTINEL IDS & MONITORING
+================================================================================
+
+1. TỔNG QUAN HỆ THỐNG
+---------------------
+Z-Sentinel là một hệ thống phát hiện và phản ứng xâm nhập (IDPS) toàn diện, kết hợp 
+giữa trí tuệ nhân tạo (AI/ML) và giám sát hạ tầng đa máy chủ. Hệ thống được thiết 
+kế theo kiến trúc tập trung (Centralized Management) với các Agent phân tán.
+
+2. KIẾN TRÚC KỸ THUẬT (TECH STACK)
+----------------------------------
+- Backend: Python, FastAPI (High-performance API).
+- Frontend: React.js, Tailwind CSS, Lucide Icons, Recharts (Trực quan hóa dữ liệu).
+- Database: PostgreSQL (Lưu trữ tập trung Alert, Flow logs, Audit logs và Server metrics).
+- AI/ML Engine: Scikit-learn, XGBoost, SHAP (Giải thích AI).
+- Network: Scapy (Bắt gói tin), HTTPX (Giao tiếp Agent-Server).
+
+3. CÁC MODULE CỐT LÕI
+--------------------
+A. NIDS (Network IDS - run_sniffer.py):
+   - Sử dụng mô hình ML (Random Forest/XGBoost) huấn luyện trên tập CICIDS2017.
+   - Trích xuất 20 đặc trưng mạng từ luồng dữ liệu (Flow-based).
+   - Áp dụng "3-Strike Rule": Chỉ thực hiện chặn IP khi phát hiện 3 lần bất thường 
+     liên tiếp để giảm thiểu báo động giả (False Positives).
+
+B. HIDS (Host IDS - log_scanner.py):
+   - Giám sát tệp tin nhật ký hệ thống (auth.log).
+   - Phát hiện các cuộc tấn công dò mật khẩu (SSH Brute Force) qua Regex.
+   - Tự động khóa IP dựa trên ngưỡng (Threshold) vi phạm.
+
+C. Server Management & Agent (agent.py):
+   - Agent nhẹ cài đặt trên các máy chủ con để thu thập tài nguyên: CPU, RAM, Disk.
+   - Cơ chế bảo mật: Xác thực qua API Key và chữ ký HMAC-SHA256 để chống giả mạo dữ liệu.
+   - HTTPS: Toàn bộ dữ liệu từ Agent về Backend được mã hóa SSL/TLS.
+
+D. Active Response (Firewall Manager):
+   - Thực thi lệnh chặn tại tầng Hệ điều hành (iptables trên Linux, netsh trên Windows).
+   - Tích hợp Cloudflare WAF để chặn IP từ tầng mạng biên (Edge).
+
+E. UEBA & Audit Log (Phân tích hành vi người dùng):
+   - Theo dõi thao tác của quản trị viên trên Dashboard.
+   - Phát hiện các hành vi bất thường (Velocity Attack) như thay đổi quyền user liên tục.
+
+F. XAI (Explainable AI - AI Insights):
+   - Sử dụng giá trị SHAP để giải thích lý do tại sao AI gán nhãn một luồng dữ liệu là tấn công.
+   - Giúp quản trị viên hiểu rõ bản chất cuộc tấn công (ví dụ: do số lượng gói tin SYN quá cao).
+
+4. QUY TRÌNH HOẠT ĐỘNG (WORKFLOW)
+---------------------------------
+1. Thu thập: Các Cảm biến (Sniffer/LogScanner) và Agent thu thập dữ liệu tại máy chủ con.
+2. Xác thực: Dữ liệu được ký HMAC và gửi về Backend qua đường truyền HTTPS.
+3. Phân tích: Backend sử dụng pipeline ML để phân loại traffic và UEBA worker để quét audit log.
+4. Cảnh báo: Kết quả được đẩy lên Dashboard Real-time qua WebSockets.
+5. Phản ứng: Nếu vượt ngưỡng 3-Strike, Backend ra lệnh cho FirewallManager chặn IP tại nguồn.
+6. Giám sát: Admin theo dõi biểu đồ sức khỏe máy chủ để đánh giá mức độ ảnh hưởng của cuộc tấn công.
+
+5. CÁC KỊCH BẢN TẤN CÔNG ĐỐI PHÓ
+--------------------------------
+- DDoS (SYN Flood, UDP Flood).
+- Port Scanning.
+- SSH Brute Force.
+- Botnet Activity.
+- Inside Threat (Thao tác quản trị bất thường).
+
+6. PHẠM VI TRIỂN KHAI
+--------------------
+- Bảo vệ hạ tầng đa máy chủ (Multi-node monitoring).
+- Quản trị tập trung tại một Dashboard duy nhất.
+- Khả năng mở rộng (Scalability): Thêm máy chủ con chỉ bằng cách cài đặt Agent.
+- Hỗ trợ triển khai hoàn toàn trong mạng nội bộ (Private LAN/Offline Network).
+
+================================================================================
+Z-Sentinel: "AI-Powered Infrastructure Security & Visibility"
+================================================================================

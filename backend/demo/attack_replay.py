@@ -134,8 +134,12 @@ class AttackReplayDemo:
         if self.is_running:
             return {"status": "error", "message": "Replay already running"}
 
+        logger.info("--- Starting Demo Replay Initialization ---")
+        logger.info("Samples CSV path: %s", self.samples_csv.absolute())
+
         samples = self._load_samples(classes=classes)
         if not samples:
+            logger.error("Failed to start: No samples found in %s", self.samples_csv)
             raise ValueError(
                 f"No demo samples available (looked in {self.samples_csv}). "
                 "Run `python -m backend.demo.build_attack_samples` first."
@@ -232,7 +236,8 @@ class AttackReplayDemo:
         base_ip = DEMO_SRC_IPS.get(label, "203.0.113.99")
         if unique_src:
             prefix = base_ip.rsplit(".", 1)[0]
-            src_ip = f"{prefix}.{(index % 254) + 1}"
+            # Giới hạn pool IP xuống 3 để dễ dàng kích hoạt 3-Strike Rule (chặn IP sau 3 lần vi phạm)
+            src_ip = f"{prefix}.{(index % 3) + 1}"
         else:
             src_ip = base_ip
         dst_port = DEMO_DST_PORTS.get(label, 0)
@@ -264,16 +269,22 @@ class AttackReplayDemo:
             from backend.alert_engine.alert_manager import get_alert_manager
             from backend.api.websocket import get_broadcast_bridge
 
+            logger.info("Initialising ML Models and Predictor for Demo Replay...")
             model_loader = get_model_loader()
             if not model_loader.is_loaded:
                 model_loader.load_from_directory("ensemble")
             predictor = get_predictor(model_loader=model_loader)
             alert_manager = get_alert_manager()
-            # Ensure alerts can reach the WebSocket even if no sniffer was started.
-            if alert_manager.broadcast_bridge is None:
-                alert_manager.set_broadcast_bridge(get_broadcast_bridge())
+            
+            # FORCE: Luôn đảm bảo Bridge được kết nối để đẩy dữ liệu lên UI
+            from backend.api.websocket import get_broadcast_bridge
+            bridge = get_broadcast_bridge()
+            alert_manager.set_broadcast_bridge(bridge)
+            logger.info("WebSocket Bridge forced for Demo mode.")
+            
+            logger.info("Engine ready. Starting replay loop for %d rounds.", rounds)
         except Exception as exc:  # pragma: no cover - defensive
-            logger.exception("Replay worker failed to initialise: %s", exc)
+            logger.error("!!! REPLAY WORKER INIT FAILED: %s", exc, exc_info=True)
             with self._lock:
                 self.stats.last_error = f"init failed: {exc}"
             return

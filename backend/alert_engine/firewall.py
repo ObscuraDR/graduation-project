@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timedelta
 from backend.database.connection import get_db
 from backend.database.repository import BlacklistRepository
@@ -11,9 +11,28 @@ router = APIRouter(prefix="/api/firewall", tags=["firewall"])
 fw_manager = FirewallManager()
 
 @router.get("/blacklist")
-def get_blacklist(db: Session = Depends(get_db)):
-    """Lấy danh sách các IP đang bị chặn (Host-level)."""
-    return BlacklistRepository.get_all_active(db)
+def get_blacklist(
+    skip: int = 0, 
+    limit: int = 20, 
+    db: Session = Depends(get_db)
+):
+    """Lấy danh sách các IP đang bị chặn có phân trang."""
+    # Lấy base query từ repository
+    data = BlacklistRepository.get_all_active(db)
+    
+    if isinstance(data, list):
+        total = len(data)
+        items = data[skip : skip + limit]
+    else:
+        total = data.count()
+        items = data.offset(skip).limit(limit).all()
+        
+    return {
+        "items": items,
+        "total": total,
+        "page": (skip // limit) + 1,
+        "limit": limit
+    }
 
 @router.get("/cloudflare-blacklist")
 async def get_cloudflare_blacklist(

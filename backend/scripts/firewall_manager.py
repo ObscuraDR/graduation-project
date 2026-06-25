@@ -4,6 +4,7 @@ import platform
 import logging
 import os
 import httpx
+import ipaddress
 from datetime import datetime, timedelta # Thêm import này
 from backend.api.validation import validate_ipv4
 from backend.config import settings
@@ -16,10 +17,9 @@ class FirewallManager:
     Quản lý thực thi các lệnh Firewall trên Linux (iptables) và Windows (netsh).
     Yêu cầu quyền Root (Linux) hoặc Administrator (Windows).
     """
-    def __init__(self, scheduler=None): # Thêm tham số scheduler
+    def __init__(self):
         self.os_type = platform.system()
         self._check_privileges()
-        self.scheduler = scheduler # Lưu trữ scheduler
 
     def _check_privileges(self):
         """Kiểm tra quyền quản trị tối cao trước khi thực thi."""
@@ -31,6 +31,15 @@ class FirewallManager:
             if ctypes.windll.shell32.IsUserAnAdmin() == 0:
                 logger.warning("CẢNH BÁO: Cần quyền Administrator để thực thi lệnh netsh.")
 
+    def _is_tailscale_ip(self, ip: str) -> bool:
+        """Kiểm tra xem IP có thuộc dải Tailscale (100.64.0.0/10) không."""
+        try:
+            addr = ipaddress.ip_address(ip)
+            network = ipaddress.ip_network("100.64.0.0/10")
+            return addr in network
+        except ValueError:
+            return False
+
     async def block_ip(self, ip: str, reason: str = "Detected attack") -> bool:
         """Chặn một địa chỉ IP kèm theo lý do để quản trị viên dễ theo dõi."""
         try:
@@ -39,6 +48,10 @@ class FirewallManager:
             logger.error(f"IP không hợp lệ, từ chối chặn: {ip}")
             return False
             
+        if self._is_tailscale_ip(ip):
+            logger.warning(f"BỎ QUA CHẶN: IP {ip} thuộc dải Tailscale. Tránh tự khóa quyền truy cập quản trị.")
+            return True
+
         logger.info(f"Đang tiến hành chặn IP: {ip} | Lý do: {reason}")
         
         # Chặn tại Edge (Cloudflare) nếu được bật
@@ -123,8 +136,9 @@ class FirewallManager:
             if check_proc.returncode == 0:
                 logger.info(f"IP {ip} đã bị chặn từ trước trên Windows.")
                 return True
+            # Rule không tồn tại (returncode != 0) -> Tiếp tục chặn
 
-            # Windows Netsh không có field comment chính thống như iptables, 
+            # Windows Netsh không có field comment chính thống như iptables,
             # nhưng ta có thể đưa reason vào description (nếu dùng PowerShell) 
             # hoặc đơn giản là giữ rule_name có ý nghĩa.
             proc = await asyncio.create_subprocess_exec(
@@ -133,9 +147,13 @@ class FirewallManager:
                 f"description=Z-Sentinel Auto Block: {reason}",
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
-            _, stderr = await proc.communicate()
+            stdout, stderr = await proc.communicate()
             if proc.returncode != 0:
-                logger.error(f"Lỗi khi thực thi netsh: {stderr.decode(errors='ignore')}")
+                err_msg = stderr.decode('cp437', errors='ignore')
+                logger.error(f"Lỗi thực thi netsh (Quyền Admin?): {err_msg}")
+                # Nếu lỗi do quyền hạn, thông báo rõ ràng hơn
+                if "đã bị từ chối" in err_msg or "requires elevation" in err_msg.lower():
+                    logger.error("VUI LÒNG CHẠY BACKEND VỚI QUYỀN ADMINISTRATOR!")
             return proc.returncode == 0
         except Exception as e:
             logger.error(f"Lỗi khi chặn IP trên Windows: {e}")
@@ -145,15 +163,8 @@ class FirewallManager:
         rule_name = f"Z-Sentinel-Block-{ip}"
         try:
             # Kiểm tra xem rule có tồn tại không trước khi xóa
-            check_proc = await asyncio.create_subprocess_exec(
-                "netsh", "advfirewall", "firewall", "show", "rule", f"name={rule_name}",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-            stdout, _ = await check_proc.communicate()
-            if check_proc.returncode != 0 or f"Rule Name: {rule_name}".encode() not in stdout:
-                logger.info(f"Không tìm thấy rule chặn cho IP {ip} trên Windows.")
-                return False
-
+            # Thay vì parse string "Rule Name", ta chỉ cần thử xóa rule đó
+            # Netsh trả về 0 nếu xóa thành công, 1 nếu không tìm thấy rule.
             proc = await asyncio.create_subprocess_exec(
                 "netsh", "advfirewall", "firewall", "delete", "rule", f"name={rule_name}",
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
@@ -257,26 +268,9 @@ class FirewallManager:
             return []
             
     def schedule_unblock(self, ip: str, duration_seconds: int):
-        """
-        Lên lịch gỡ chặn một địa chỉ IP sau một khoảng thời gian nhất định.
-        Yêu cầu một instance APScheduler được truyền vào khi khởi tạo.
-        """
-        if not self.scheduler:
-            logger.warning(f"APScheduler chưa được khởi tạo. Không thể lên lịch gỡ chặn cho {ip}.")
-            return False
-
-        run_date = datetime.now() + timedelta(seconds=duration_seconds)
-        job_id = f"unblock_{ip}_{run_date.timestamp()}" # Tạo ID duy nhất cho job
-
-        try:
-            self.scheduler.add_job(
-                self.unblock_ip, 'date', run_date=run_date, args=[ip], id=job_id, replace_existing=True
-            )
-            logger.info(f"Đã lên lịch gỡ chặn cho IP {ip} vào lúc {run_date} (Job ID: {job_id})")
-            return True
-        except Exception as e:
-            logger.error(f"Lỗi khi lên lịch gỡ chặn cho IP {ip}: {e}")
-            return False
+        """Deprecated: Use handle_firewall_block in run_sniffer.py instead."""
+        logger.warning("FirewallManager.schedule_unblock is deprecated. Use native asyncio tasks.")
+        return False
 
 if __name__ == "__main__":
     # Test nhanh module

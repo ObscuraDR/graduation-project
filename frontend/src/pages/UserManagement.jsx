@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
-import { Users, PlusCircle, Edit, Trash2, RefreshCw, UserCheck, Loader2, AlertCircle, CheckCircle2, KeyRound } from 'lucide-react';
-import { getToken, hasRole, getUser } from '../lib/auth';
+import api from '../lib/api';
+import { Users, PlusCircle, Edit, Trash2, UserCheck, Loader2, AlertCircle, CheckCircle2, KeyRound } from 'lucide-react';
+import { hasRole, getUser } from '../lib/auth';
 
 const ROLES = ['admin', 'security_analyst', 'operator'];
 
@@ -37,10 +37,7 @@ export default function UserManagement() {
     setLoading(true);
     setError('');
     try {
-      const token = getToken();
-      const response = await axios.get('/api/auth/users', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get('/auth/users');
       setUsers(response.data);
     } catch (err) {
       setError('Không thể tải danh sách người dùng: ' + (err.response?.data?.detail || err.message));
@@ -52,10 +49,7 @@ export default function UserManagement() {
 
   const handleAddUser = async () => {
     try {
-      const token = getToken();
-      await axios.post('/api/auth/users', newUserData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.post('/auth/users', newUserData);
       flashMessage('success', `Người dùng ${newUserData.username} đã được thêm.`);
       setShowAddModal(false);
       setNewUserData({ username: '', email: '', password: '', role: 'operator' });
@@ -68,10 +62,7 @@ export default function UserManagement() {
   const handleEditRole = async () => {
     if (!currentUserToEdit) return;
     try {
-      const token = getToken();
-      await axios.put(`/api/auth/users/${currentUserToEdit.id}/role`, editRoleData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.put(`/auth/users/${currentUserToEdit.id}/role`, editRoleData);
       flashMessage('success', `Vai trò của ${currentUserToEdit.username} đã được cập nhật.`);
       setShowEditModal(false);
       setCurrentUserToEdit(null);
@@ -84,10 +75,7 @@ export default function UserManagement() {
   const handleDeleteUser = async (userId, username) => {
     if (window.confirm(`Bạn có chắc muốn xóa người dùng ${username} không?`)) {
       try {
-        const token = getToken();
-        await axios.delete(`/api/auth/users/${userId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await api.delete(`/auth/users/${userId}`);
         flashMessage('success', `Người dùng ${username} đã bị xóa.`);
         fetchUsers();
       } catch (err) {
@@ -99,10 +87,7 @@ export default function UserManagement() {
   const handleResetPassword = async (userId, username) => {
     if (window.confirm(`Bạn có chắc muốn đặt lại mật khẩu cho người dùng ${username}?`)) {
       try {
-        const token = getToken();
-        const response = await axios.post(`/api/auth/users/${userId}/reset-password`, {}, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await api.post(`/auth/users/${userId}/reset-password`, {});
         setResetPasswordResult({ username, newPassword: response.data.new_password });
         setShowResetPasswordModal(true);
         flashMessage('success', `Mật khẩu cho ${username} đã được đặt lại.`);
@@ -188,7 +173,7 @@ export default function UserManagement() {
                       {user.role}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-xs">{new Date(user.created_at).toLocaleString()}</td>
+                  <td className="px-6 py-4 text-xs">{user.created_at ? new Date(user.created_at).toLocaleString() : '—'}</td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
                       <button

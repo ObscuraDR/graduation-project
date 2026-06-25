@@ -1,9 +1,8 @@
 import { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { Shield, Lock, User, Loader2 } from 'lucide-react'
-import { loginRequest } from '../lib/api'
+import { loginRequest, fetchMe } from '../lib/api'
 import { setAuth } from '../lib/auth'
-import axios from 'axios'
 
 export default function Login() {
   const [username, setUsername] = useState('')
@@ -26,14 +25,9 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
-      // Sử dụng OAuth2 Form data chuẩn
-      const formData = new FormData()
-      formData.append('username', username.trim())
-      formData.append('password', password)
-      
-      const response = await axios.post('/api/auth/login', formData)
-      const data = response.data
-      setAuth(data.access_token, data.user)
+      await loginRequest(username.trim(), password)
+      const user = await fetchMe()
+      setAuth(user)
       navigate(from, { replace: true })
     } catch (err) {
       if (err.response?.status === 403) {
@@ -114,6 +108,15 @@ export default function Login() {
             {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
           </button>
+
+          <div className="text-center pt-2">
+            <p className="text-sm text-gray-400">
+              Chưa có tài khoản?{' '}
+              <Link to="/register" className="text-blue-400 hover:text-blue-300 font-medium transition-colors">
+                Đăng ký ngay
+              </Link>
+            </p>
+          </div>
         </form>
 
         <p className="text-center text-xs text-gray-600 mt-6">

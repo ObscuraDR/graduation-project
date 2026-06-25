@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Dict, List, Optional
@@ -180,10 +180,10 @@ class EmailNotificationService:
         if src_ip not in self._email_history:
             return False
         cutoff = self._email_history[src_ip] + timedelta(seconds=self._cooldown_seconds)
-        return datetime.utcnow() < cutoff
+        return datetime.now(timezone.utc) < cutoff
 
     def _record_email_sent(self, src_ip: str) -> None:
-        self._email_history[src_ip] = datetime.utcnow()
+        self._email_history[src_ip] = datetime.now(timezone.utc)
 
     def reset_cooldown(self, src_ip: Optional[str] = None) -> None:
         """Clear cooldown state (useful in tests)."""

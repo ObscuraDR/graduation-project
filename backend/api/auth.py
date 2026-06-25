@@ -6,10 +6,10 @@ Lightweight single-admin login for the IDS dashboard.
 Scope decision (graduation project)
 -----------------------------------
 This module intentionally implements a *minimal* authentication layer:
-a username/password login that returns a short-lived JWT used by the React
-dashboard. It deliberately does NOT include user registration, password reset,
-email verification, or step-up/OTP — those are out of scope for a single-operator
-IDS and would only add attack surface and maintenance cost.
+a username/password login and registration that returns a short-lived JWT 
+used by the React dashboard. It deliberately does NOT include password reset,
+email verification, or step-up/OTP — those are out of scope for a 
+single-operator IDS and would only add attack surface and maintenance cost.
 
 The existing ``X-API-Key`` mechanism (see ``dependencies.py``) remains the auth
 method for programmatic/API access and is unaffected by this module.
@@ -34,16 +34,18 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 import secrets # Import secrets for CSRF token generation
 import bcrypt
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt # Sử dụng python-jose như trong code hiện tại
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+import re
 from sqlalchemy.orm import Session
 
 from backend.config import settings
-from backend.database.connection import get_db, get_redis_client
+from backend.database.connection import get_db
 from backend.database.repository import UserRepository # Import UserRepository
 from backend.database.models import User
+from backend.audit.logger import record_audit, get_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -54,46 +56,38 @@ auth_router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 # ── Lockout Helpers ──────────────────────────────────────────────────────────
+# Sử dụng bộ nhớ trong thay cho Redis để tinh gọn hệ thống
+_failed_attempts_storage: dict[str, list[datetime]] = {}
+_lockouts_storage: dict[str, datetime] = {}
+
 def _get_lockout_key(username: str) -> str:
     return f"auth:lockout:{username}"
-
-def _get_failed_attempts_key(username: str) -> str:
-    return f"auth:failed_attempts:{username}"
 
 def is_user_locked_out(username: str) -> bool:
     """Kiểm tra xem user có đang bị khóa không."""
     if not settings.enable_account_lockout:
         return False
-    try:
-        r = get_redis_client()
-        return r.exists(_get_lockout_key(username))
-    except Exception:
-        return False
+    lock_time = _lockouts_storage.get(username)
+    if lock_time and datetime.now(timezone.utc) < lock_time + timedelta(minutes=settings.auth_lockout_minutes):
+        return True
+    return False
 
 def record_failed_attempt(username: str):
     """Tăng số lần đăng nhập sai và thực hiện khóa nếu vượt ngưỡng."""
     if not settings.enable_account_lockout:
         return
-    try:
-        r = get_redis_client()
-        key = _get_failed_attempts_key(username)
-        attempts = r.incr(key)
-        r.expire(key, 1800) # Reset sau 30 phút nếu không thử tiếp
-
-        if attempts >= settings.auth_max_failed_attempts:
-            lockout_key = _get_lockout_key(username)
-            r.setex(lockout_key, settings.auth_lockout_minutes * 60, "locked")
-            logger.warning("Account %r locked due to multiple failed attempts", username)
-    except Exception as e:
-        logger.error("Error recording failed login for %r: %e", username, e)
+    attempts = _failed_attempts_storage.get(username, [])
+    attempts.append(datetime.now(timezone.utc))
+    _failed_attempts_storage[username] = attempts
+    
+    if len(attempts) >= settings.auth_max_failed_attempts:
+        _lockouts_storage[username] = datetime.now(timezone.utc)
+        logger.warning("Account %r locked (In-memory)", username)
 
 def reset_failed_attempts(username: str):
     """Xóa lịch sử đăng nhập sai khi thành công."""
-    try:
-        r = get_redis_client()
-        r.delete(_get_failed_attempts_key(username))
-    except Exception:
-        pass
+    _failed_attempts_storage.pop(username, None)
+    _lockouts_storage.pop(username, None)
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -105,6 +99,7 @@ class LoginRequest(BaseModel):
 
 
 class UserInfo(BaseModel):
+    id: Optional[int] = None
     username: str
     email: Optional[str] = None
     role: str
@@ -117,7 +112,56 @@ class TokenResponse(BaseModel):
     user: UserInfo
 
 
+class PasswordChangeRequest(BaseModel):
+    old_password: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        if not re.match(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$", v):
+            raise ValueError(
+                "Mật khẩu mới phải có ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường và số."
+            )
+        return v
+
+
+class UserCreateRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    email: str = Field(..., max_length=100)
+    password: str = Field(..., min_length=8, max_length=128)
+    role: str = Field(default="operator")
+
+
+class UserUpdateRoleRequest(BaseModel):
+    role: str = Field(..., min_length=3, max_length=20)
+
+
+class UserResetPasswordRequest(BaseModel):
+    new_password: Optional[str] = Field(None, min_length=8, max_length=128)
+
+
 # ── Password + token helpers ────────────────────────────────────────────────
+def create_access_token(subject: str, role: str) -> tuple[str, int]:
+    """Create a JWT and return (token, expires_in_seconds)."""
+    expires_delta = timedelta(minutes=settings.access_token_expire_minutes)
+    expires_in = int(expires_delta.total_seconds())
+    expire = datetime.now(timezone.utc) + expires_delta
+    payload = {"sub": subject, "role": role, "exp": expire}
+    token = jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+    return token, expires_in
+
+
+def _extract_bearer_token(request: Request) -> Optional[str]:
+    """Read JWT from HttpOnly cookie or Authorization header."""
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        return cookie_token.replace("Bearer ", "")
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        return auth_header[7:]
+    return None
+
 def verify_password(plain_password: str, password_hash: str) -> bool:
     """Constant-time bcrypt verification. Returns False on any malformed hash."""
     try:
@@ -157,12 +201,9 @@ async def get_current_user_from_cookie(
     Raises 401 if the token is missing, invalid, expired, or the user no
     longer exists.
     """
-    token = request.cookies.get("access_token")
-    if not token:
+    token_value = _extract_bearer_token(request)
+    if not token_value:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-
-    # Remove "Bearer " prefix if present
-    token_value = token.replace("Bearer ", "")
 
     try:
         payload = jwt.decode(token_value, settings.secret_key, algorithms=[settings.algorithm])
@@ -190,8 +231,33 @@ async def verify_csrf_token(request: Request):
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
-@auth_router.post("/login") # Removed response_model=TokenResponse
-async def login(response: Response, payload: LoginRequest, db: Session = Depends(get_db)):
+@auth_router.post("/register", response_model=UserInfo, status_code=status.HTTP_201_CREATED)
+async def register(user_data: UserCreateRequest, db: Session = Depends(get_db)):
+    """
+    Endpoint đăng ký công khai. 
+    Tạo người dùng mới với vai trò mặc định là 'operator'.
+    """
+    if UserRepository.get_by_username(db, user_data.username):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tên đăng nhập đã tồn tại")
+    
+    if UserRepository.get_by_email(db, user_data.email):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email đã tồn tại")
+
+    try:
+        # Ép kiểu role về 'operator' để bảo mật, tránh việc người dùng tự set mình làm admin
+        registration_data = user_data.model_dump()
+        registration_data['role'] = 'operator' 
+
+        new_user = UserRepository.create(db, registration_data)
+        logger.info("Người dùng mới đã đăng ký: %r", new_user.username)
+        return UserInfo(id=new_user.id, username=new_user.username, email=new_user.email, role=new_user.role)
+    except Exception as e:
+        logger.error(f"Lỗi không xác định khi đăng ký người dùng: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Đã xảy ra lỗi hệ thống khi đăng ký.")
+
+
+@auth_router.post("/login", response_model=TokenResponse)
+async def login(response: Response, request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
     """
     Authenticate with username + password and receive a JWT.
 
@@ -221,7 +287,7 @@ async def login(response: Response, payload: LoginRequest, db: Session = Depends
     reset_failed_attempts(user.username)
     
     # Generate JWT token
-    token, expires_in = UserRepository.create_access_token(subject=user.username, role=user.role)
+    token, expires_in = create_access_token(subject=user.username, role=user.role)
 
     # Generate CSRF token
     csrf_token = secrets.token_urlsafe(32) # Generate a random string
@@ -248,13 +314,31 @@ async def login(response: Response, payload: LoginRequest, db: Session = Depends
     )
 
     logger.info("User %r logged in successfully", user.username)
+    record_audit(db, user.username, "login", client_ip=get_client_ip(request))
+
+    return TokenResponse(
+        access_token=token,
+        token_type="bearer",
+        expires_in=expires_in,
+        user=UserInfo(id=user.id, username=user.username, email=user.email, role=user.role),
+    )
 
 
 @auth_router.post("/logout")
-async def logout(response: Response):
+async def logout(response: Response, request: Request, db: Session = Depends(get_db)):
     """
     Xóa HttpOnly cookie 'access_token' để đăng xuất người dùng.
     """
+    username = "unknown"
+    try:
+        token = _extract_bearer_token(request)
+        if token:
+            payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+            username = payload.get("sub") or username
+    except Exception:
+        pass
+
+    record_audit(db, username, "logout", client_ip=get_client_ip(request))
     response.delete_cookie(
         key="access_token",
         httponly=True,
@@ -276,6 +360,7 @@ async def logout(response: Response):
 async def read_me(current_user: User = Depends(get_current_user_from_cookie)):
     """Return the currently authenticated user's profile (validates the token)."""
     return UserInfo(
+        id=current_user.id,
         username=current_user.username,
         email=current_user.email,
         role=current_user.role,
@@ -297,6 +382,7 @@ async def change_password(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Lỗi hệ thống khi cập nhật mật khẩu")
 
     logger.info("User %r changed password successfully", current_user.username)
+    record_audit(db, current_user.username, "change_password")
     return {"success": True, "message": "Đổi mật khẩu thành công"}
 
 
@@ -310,12 +396,13 @@ async def list_users(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền truy cập")
     
     users = UserRepository.get_all(db)
-    return [UserInfo(username=u.username, email=u.email, role=u.role) for u in users]
+    return [UserInfo(id=u.id, username=u.username, email=u.email, role=u.role) for u in users]
 
 
 @auth_router.post("/users", response_model=UserInfo, status_code=status.HTTP_201_CREATED)
 async def create_user(
     user_data: UserCreateRequest,
+    request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     _csrf_verified: bool = Depends(verify_csrf_token), # Add CSRF protection
     db: Session = Depends(get_db)
@@ -330,13 +417,22 @@ async def create_user(
     if UserRepository.get_by_email(db, user_data.email):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email đã tồn tại")
 
-    new_user = UserRepository.create(db, user_data.dict())
-    return UserInfo(username=new_user.username, email=new_user.email, role=new_user.role)
+    new_user = UserRepository.create(db, user_data.model_dump())
+    record_audit(
+        db, 
+        current_user.username, 
+        "create_user", 
+        resource_type="user", 
+        resource_id=str(new_user.id),
+        client_ip=get_client_ip(request)
+    )
+    return UserInfo(id=new_user.id, username=new_user.username, email=new_user.email, role=new_user.role)
 
 
 @auth_router.put("/users/{user_id}/role", response_model=UserInfo)
 async def update_user_role(
     user_id: int,
+    request: Request,
     role_data: UserUpdateRoleRequest,
     current_user: User = Depends(get_current_user_from_cookie),
     _csrf_verified: bool = Depends(verify_csrf_token), # Add CSRF protection
@@ -353,9 +449,21 @@ async def update_user_role(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Người dùng không tồn tại")
     
+    old_role = user.role
     UserRepository.update_role(db, user_id, role_data.role)
     db.refresh(user)
-    return UserInfo(username=user.username, email=user.email, role=user.role)
+
+    # Ghi log chi tiết hành vi để phân tích UEBA
+    record_audit(
+        db, 
+        current_user.username, 
+        "update_user_role", 
+        resource_type="user", 
+        resource_id=str(user_id),
+        details={"old_role": old_role, "new_role": role_data.role},
+        client_ip=get_client_ip(request)
+    )
+    return UserInfo(id=user.id, username=user.username, email=user.email, role=user.role)
 
 @auth_router.post("/users/{user_id}/reset-password", response_model=dict)
 async def reset_user_password(
@@ -388,6 +496,7 @@ async def reset_user_password(
 @auth_router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: int,
+    request: Request,
     current_user: User = Depends(get_current_user_from_cookie),
     _csrf_verified: bool = Depends(verify_csrf_token), # Add CSRF protection
     db: Session = Depends(get_db)
@@ -402,4 +511,12 @@ async def delete_user(
     if not UserRepository.delete(db, user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Người dùng không tồn tại")
     
+    record_audit(
+        db, 
+        current_user.username, 
+        "delete_user", 
+        resource_type="user", 
+        resource_id=str(user_id),
+        client_ip=get_client_ip(request)
+    )
     return

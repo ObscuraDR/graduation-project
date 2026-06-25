@@ -4,7 +4,7 @@ Flow/session aggregation using 5-tuple (src_ip, dst_ip, src_port, dst_port, prot
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Literal, Optional
 
 logger = logging.getLogger(__name__)
@@ -56,8 +56,8 @@ class Flow:
         self.protocol = protocol
 
         self.flow_key = self._generate_flow_key()
-        self.start_time = datetime.utcnow()
-        self.last_seen = datetime.utcnow()
+        self.start_time = datetime.now(timezone.utc)
+        self.last_seen = datetime.now(timezone.utc)
         self.packet_count = 0
         self.byte_count = 0
         self.forward_packets = 0
@@ -106,7 +106,7 @@ class Flow:
 
         self.packet_count += 1
         self.byte_count += byte_len
-        self.last_seen = datetime.utcnow()
+        self.last_seen = datetime.now(timezone.utc)
 
         if self.last_packet_time:
             inter_arrival = (self.last_seen - self.last_packet_time).total_seconds()
@@ -163,13 +163,13 @@ class Flow:
         if not self.processed or self.last_predicted_at is None:
             return True
 
-        elapsed = (datetime.utcnow() - self.last_predicted_at).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - self.last_predicted_at).total_seconds()
         return elapsed >= prediction_interval_sec
 
     def mark_inference_complete(self) -> None:
         """Record that inference ran for this flow."""
         self.processed = True
-        self.last_predicted_at = datetime.utcnow()
+        self.last_predicted_at = datetime.now(timezone.utc)
         self.prediction_count += 1
 
     def get_stats(self) -> dict:
@@ -275,10 +275,8 @@ class FlowBuilder:
         return list(self.flows.values())
 
     def cleanup_expired_flows(self) -> List[Flow]:
-        """
-        Remove flows that are inactive, exceeded max lifetime, or processed past retention.
-        """
-        current_time = datetime.utcnow()
+        """Remove flows that are inactive, exceeded max lifetime, or processed past retention."""
+        current_time = datetime.now(timezone.utc)
         removed_flows: List[Flow] = []
         expired_keys: List[str] = []
 

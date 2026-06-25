@@ -3,9 +3,9 @@ Configuration Management
 Load environment variables and application settings
 """
 
-from pydantic_settings import BaseSettings
-from pydantic import model_validator
-from typing import Optional, List
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import model_validator, field_validator
+from typing import Optional, List, Any, Union
 from functools import lru_cache
 import logging
 import os
@@ -30,19 +30,6 @@ class Settings(BaseSettings):
     postgres_user: str = "ids_user"
     postgres_password: str = "ids_password"
     
-    # MongoDB
-    mongodb_host: str = "localhost"
-    mongodb_port: int = 27017
-    mongodb_db: str = "ids_logs"
-    mongo_uri: str = ""   # URI override; takes priority when non-empty
-    mongo_db: str = "ids_logs"
-
-    # Redis
-    redis_host: str = "localhost"
-    redis_port: int = 6379
-    redis_db: int = 0
-    redis_url: str = ""   # URI override; takes priority when non-empty
-    
     # API
     api_host: str = "0.0.0.0"
     api_port: int = 8000
@@ -62,19 +49,23 @@ class Settings(BaseSettings):
     enable_account_lockout: bool = True
 
     # CORS
-    cors_origins_str: str = ""
+    cors_origins: Any = []
 
-    @property
-    def cors_origins(self) -> List[str]:
-        if self.cors_origins_str:
-            return [o.strip() for o in self.cors_origins_str.split(",") if o.strip()]
-        if self.environment == "development":
-            return ["http://localhost:3000", "http://127.0.0.1:3000"]
-        return []
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: any) -> List[str]:
+        if isinstance(v, str) and v:
+            return [o.strip() for o in v.split(",") if o.strip()]
+        return v or []
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         env = self.environment.lower()
+        
+        # Set default CORS for development if empty
+        if env == "development" and not self.cors_origins:
+            self.cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+            
         if env == "production":
             errors = []
             if self.secret_key == DEFAULT_SECRET_KEY:
@@ -85,7 +76,7 @@ class Settings(BaseSettings):
                 errors.append(f"SECRET_KEY too short ({len(self.secret_key)} chars, need >= 32)")
             if len(self.api_key) < 16:
                 errors.append(f"API_KEY too short ({len(self.api_key)} chars, need >= 16)")
-            if not self.cors_origins_str.strip():
+            if not self.cors_origins:
                 errors.append("CORS_ORIGINS must be set in production (no wildcard allowed)")
             if errors:
                 raise RuntimeError(
@@ -104,7 +95,7 @@ class Settings(BaseSettings):
 
     # Live-attack replay demo (thesis defense). Disabled by default; when False
     # the /api/demo/start endpoint is refused even with a valid API key.
-    enable_demo_replay: bool = False
+    enable_demo_replay: bool = True
     
     # Email alerts
     enable_email_alerts: bool = False
@@ -123,6 +114,10 @@ class Settings(BaseSettings):
     auth_log_path: str = "/var/log/auth.log" # Or /var/log/secure for RHEL/CentOS
     ssh_brute_force_threshold: int = 5
     ssh_brute_force_window_seconds: int = 60
+    ssh_brute_force_block_threshold: int = 20
+    ssh_brute_force_severe_threshold: int = 100
+    ssh_brute_force_block_1h_seconds: int = 3600
+    ssh_brute_force_block_24h_seconds: int = 86400
     log_scan_interval_seconds: int = 5
 
     # Cloudflare Edge Firewall
@@ -167,10 +162,12 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_file: str = "./logs/backend.log"
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        protected_namespaces=(),  # Sửa lỗi cảnh báo model_dir
+        extra="ignore"             # Cho phép bỏ qua các biến môi trường thừa
+    )
 
 @lru_cache()
 def get_settings() -> Settings:

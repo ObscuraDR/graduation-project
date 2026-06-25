@@ -3,9 +3,9 @@ Database Models
 SQLAlchemy ORM models for PostgreSQL database
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, DECIMAL, JSON, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, DECIMAL, JSON, ForeignKey, Enum
 from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
+from datetime import datetime, timezone
 
 Base = declarative_base()
 
@@ -19,8 +19,8 @@ class User(Base):
     email = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     role = Column(String(20), default="user")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class TrafficFlow(Base):
@@ -31,8 +31,8 @@ class TrafficFlow(Base):
     flow_key = Column(String(200), unique=True, nullable=False, index=True)
     src_ip = Column(String(45), nullable=False, index=True)
     dst_ip = Column(String(45), nullable=False, index=True)
-    src_port = Column(Integer, nullable=True)
-    dst_port = Column(Integer, nullable=True)
+    src_port = Column(Integer, nullable=True, index=True)
+    dst_port = Column(Integer, nullable=True, index=True)
     protocol = Column(String(10), nullable=False)
     
     # Flow statistics
@@ -52,14 +52,14 @@ class TrafficFlow(Base):
     
     # Timing
     flow_duration = Column(Float, default=0.0)
-    start_time = Column(DateTime, default=datetime.utcnow)
-    last_seen = Column(DateTime, default=datetime.utcnow)
+    start_time = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_seen = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     inter_arrival_time_mean = Column(Float, default=0.0)
     
     # Unique ports
     unique_dst_ports = Column(Integer, default=0)
     
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
 
 class FlowFeature(Base):
@@ -94,7 +94,7 @@ class FlowFeature(Base):
     # Store raw feature vector as JSON for reference
     feature_vector = Column(JSON, nullable=True)
     
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
 
 class AttackAlert(Base):
@@ -108,7 +108,7 @@ class AttackAlert(Base):
     source_ip = Column(String(45), nullable=False, index=True)
     dest_ip = Column(String(45), nullable=False, index=True)
     source_port = Column(Integer, nullable=True)
-    dest_port = Column(Integer, nullable=True)
+    dest_port = Column(Integer, nullable=True, index=True)
     protocol = Column(String(10), nullable=True)
     
     attack_type = Column(String(50), nullable=False, index=True)
@@ -132,19 +132,7 @@ class AttackAlert(Base):
     # Store prediction probabilities
     all_probabilities = Column(JSON, nullable=True)
     
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
-
-
-# Cấu trúc đề xuất cho backend/database/models.py
-class Blacklist(Base):
-    __tablename__ = "blacklist"
-    id = Column(Integer, primary_key=True, index=True)
-    ip_address = Column(String, unique=True, index=True, nullable=False)
-    reason = Column(String)
-    blocked_at = Column(DateTime, default=datetime.utcnow)
-    expires_at = Column(DateTime, nullable=True)  # Null nghĩa là chặn vĩnh viễn
-    is_active = Column(Boolean, default=True)
-    auto_blocked = Column(Boolean, default=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
 
 class Server(Base):
@@ -161,8 +149,8 @@ class Server(Base):
     ram_usage = Column(Float, nullable=True)  # %
     disk_usage = Column(Float, nullable=True) # %
     firewall_status = Column(String(50), nullable=True) # e.g., "active", "inactive"
-    last_seen = Column(DateTime, default=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    last_seen = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class ServerMetricHistory(Base):
@@ -171,7 +159,7 @@ class ServerMetricHistory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     server_id = Column(Integer, ForeignKey("servers.id"), nullable=False, index=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     cpu_usage = Column(Float, nullable=False)
     ram_usage = Column(Float, nullable=False)
     disk_usage = Column(Float, nullable=False)
@@ -185,7 +173,7 @@ class SystemSetting(Base):
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String(100), unique=True, nullable=False, index=True)
     value = Column(JSON, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class AttackHistory(Base):
@@ -196,8 +184,8 @@ class AttackHistory(Base):
     source_ip = Column(String(45), nullable=False, index=True)
     attack_type = Column(String(50), nullable=False, index=True)
     
-    first_seen = Column(DateTime, default=datetime.utcnow)
-    last_seen = Column(DateTime, default=datetime.utcnow)
+    first_seen = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_seen = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     attack_count = Column(Integer, default=1)
     
     # Severity distribution
@@ -209,7 +197,7 @@ class AttackHistory(Base):
     # Correlation window
     correlation_window_start = Column(DateTime, nullable=True)
     
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class Model(Base):
@@ -226,7 +214,7 @@ class Model(Base):
     f1_score = Column(DECIMAL(5, 2), nullable=True)
     file_path = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Whitelist(Base):
@@ -239,7 +227,7 @@ class Whitelist(Base):
     protocol = Column(String(10), nullable=True)
     reason = Column(Text, nullable=True)
     added_by = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Blacklist(Base):
@@ -252,7 +240,7 @@ class Blacklist(Base):
     country_code = Column(String(5), nullable=True)   # e.g. "CN", "RU"
     auto_blocked = Column(Boolean, default=False)      # True = blocked by AlertManager
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     expires_at = Column(DateTime, nullable=True)       # None = permanent
 
 
@@ -264,7 +252,23 @@ class GeoBlockRule(Base):
     country_code = Column(String(5), nullable=False, unique=True, index=True)
     country_name = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class SecurityLog(Base):
+    """Model lưu trữ nhật ký bảo mật từ các cảm biến (Sniffer, LogScanner)"""
+    __tablename__ = "security_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    server = Column(String(50), default="local")
+    source_ip = Column(String(45), nullable=True, index=True)
+    country = Column(String(100), nullable=True)
+    event_type = Column(String(50), nullable=False, index=True)
+    message = Column(Text, nullable=True)
+    log_source = Column(String(50), nullable=True)
+    raw = Column(Text, nullable=True)
+    extra = Column(JSON, nullable=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
 
 class SecurityReport(Base):
@@ -285,7 +289,7 @@ class SecurityReport(Base):
     auto_blocked_count = Column(Integer, default=0)
     geo_blocked_count = Column(Integer, default=0)
     summary = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Metric(Base):
@@ -295,6 +299,56 @@ class Metric(Base):
     id = Column(Integer, primary_key=True, index=True)
     metric_name = Column(String(100), nullable=False)
     value = Column(Float, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     model_id = Column(Integer, nullable=True)
     metric_type = Column(String(50), nullable=True)  # accuracy, precision, recall, f1, fpr
+
+
+class AuditLog(Base):
+    """User action audit trail"""
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), nullable=False, index=True)
+    action = Column(String(50), nullable=False, index=True)
+    resource_type = Column(String(50), nullable=True)
+    resource_id = Column(String(100), nullable=True)
+    details = Column(JSON, nullable=True)
+    client_ip = Column(String(45), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class BlockHistory(Base):
+    """History of IP block/unblock actions"""
+    __tablename__ = "block_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ip_address = Column(String(45), nullable=False, index=True)
+    action = Column(String(20), nullable=False)  # block | unblock
+    reason = Column(Text, nullable=True)
+    duration_hours = Column(Integer, nullable=True)
+    performed_by = Column(String(50), nullable=True)
+    auto_blocked = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class GeoAllowRule(Base):
+    """Countries explicitly allowed (never geo-blocked)"""
+    __tablename__ = "geo_allow_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    country_code = Column(String(5), nullable=False, unique=True, index=True)
+    country_name = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class GeoWatchRule(Base):
+    """Countries under enhanced monitoring"""
+    __tablename__ = "geo_watch_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    country_code = Column(String(5), nullable=False, unique=True, index=True)
+    country_name = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

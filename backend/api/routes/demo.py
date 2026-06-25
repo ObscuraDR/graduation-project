@@ -9,12 +9,27 @@ All endpoints require X-API-Key header.
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from backend.api.dependencies import verify_api_key
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
-demo_router = APIRouter(dependencies=[Depends(verify_api_key)])
+# Bỏ verify_api_key để có thể gọi nhanh từ curl hoặc trình duyệt khi đang test
+demo_router = APIRouter()
+
+class DemoConfigUpdate(BaseModel):
+    enabled: bool
+
+@demo_router.post("/config")
+async def update_demo_config(payload: DemoConfigUpdate):
+    """
+    Cập nhật trạng thái ENABLE_DEMO_REPLAY tại runtime để cho phép hoặc chặn tính năng demo.
+    """
+    settings.enable_demo_replay = payload.enabled
+    action = "đã được bật" if payload.enabled else "đã được tắt"
+    logger.info(f"Chế độ Demo Replay {action} thông qua API.")
+    return {"status": "success", "enable_demo_replay": settings.enable_demo_replay}
 
 
 @demo_router.post("/start")

@@ -5,13 +5,15 @@ Repository layer for database operations
 
 import logging
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+import bcrypt
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
 from backend.database.models import (
     TrafficFlow, FlowFeature, AttackAlert, AttackHistory,
-    Model, Whitelist, User, Blacklist, GeoBlockRule, SecurityReport, Server, ServerMetricHistory
+    Model, Whitelist, User, Blacklist, GeoBlockRule, SecurityReport, Server, ServerMetricHistory,
+    AuditLog, BlockHistory, GeoAllowRule, GeoWatchRule, SystemSetting,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,8 +45,8 @@ class TrafficFlowRepository:
                 psh_count=flow_data.get('psh_count', 0),
                 ack_count=flow_data.get('ack_count', 0),
                 flow_duration=flow_data.get('flow_duration', 0.0),
-                start_time=datetime.fromisoformat(flow_data.get('start_time', datetime.utcnow().isoformat())),
-                last_seen=datetime.fromisoformat(flow_data.get('last_seen', datetime.utcnow().isoformat())),
+                start_time=datetime.fromisoformat(flow_data.get('start_time', datetime.now(timezone.utc).isoformat())),
+                last_seen=datetime.fromisoformat(flow_data.get('last_seen', datetime.now(timezone.utc).isoformat())),
                 inter_arrival_time_mean=flow_data.get('inter_arrival_time_mean', 0.0),
                 unique_dst_ports=flow_data.get('unique_dst_ports', 0)
             )
@@ -82,7 +84,7 @@ class TrafficFlowRepository:
                 if hasattr(flow, key) and key != 'flow_key':
                     setattr(flow, key, value)
             
-            flow.last_seen = datetime.utcnow()
+            flow.last_seen = datetime.now(timezone.utc)
             db.commit()
             db.refresh(flow)
             return flow
@@ -158,7 +160,7 @@ class AttackAlertRepository:
                 model_name=alert_data.get('model_name'),
                 model_version=alert_data.get('model_version'),
                 all_probabilities=alert_data.get('all_probabilities'),
-                timestamp=datetime.fromisoformat(alert_data.get('timestamp', datetime.utcnow().isoformat()))
+                timestamp=datetime.fromisoformat(alert_data.get('timestamp', datetime.now(timezone.utc).isoformat()))
             )
             db.add(alert)
             db.commit()
@@ -213,7 +215,7 @@ class AttackAlertRepository:
             alert.status = status
             alert.is_resolved = (status == "resolved")
             if status == "resolved":
-                alert.resolved_at = datetime.utcnow()
+                alert.resolved_at = datetime.now(timezone.utc)
             if notes:
                 alert.notes = notes
             
@@ -244,7 +246,7 @@ class AttackHistoryRepository:
             if history:
                 # Update existing history
                 history.attack_count += 1
-                history.last_seen = datetime.utcnow()
+                history.last_seen = datetime.now(timezone.utc)
                 
                 if severity == 'critical':
                     history.critical_count += 1
@@ -263,8 +265,8 @@ class AttackHistoryRepository:
                 history = AttackHistory(
                     source_ip=src_ip,
                     attack_type=attack_type,
-                    first_seen=datetime.utcnow(),
-                    last_seen=datetime.utcnow(),
+                    first_seen=datetime.now(timezone.utc),
+                    last_seen=datetime.now(timezone.utc),
                     attack_count=1,
                     critical_count=1 if severity == 'critical' else 0,
                     high_count=1 if severity == 'high' else 0,
@@ -318,7 +320,7 @@ class BlacklistRepository:
     def get_all_active(db: Session) -> List[Blacklist]:
         return db.query(Blacklist).filter(
             Blacklist.is_active == True,
-            or_(Blacklist.expires_at == None, Blacklist.expires_at > datetime.utcnow())
+            or_(Blacklist.expires_at == None, Blacklist.expires_at > datetime.now(timezone.utc))
         ).all()
 
     @staticmethod
@@ -326,7 +328,7 @@ class BlacklistRepository:
         """Lấy danh sách các IP đã hết hạn chặn nhưng vẫn đang ở trạng thái active."""
         return db.query(Blacklist).filter(
             Blacklist.is_active == True,
-            Blacklist.expires_at <= datetime.utcnow()
+            Blacklist.expires_at <= datetime.now(timezone.utc)
         ).all()
 
     @staticmethod
@@ -478,7 +480,7 @@ class ServerRepository:
             update_data = {k: v for k, v in locals().items() if v is not None and k not in ['db', 'server_id', 'self']}
             for key, value in update_data.items():
                 setattr(server, key, value)
-            server.last_seen = datetime.utcnow() # Cập nhật last_seen khi có bất kỳ update nào
+            server.last_seen = datetime.now(timezone.utc) # Cập nhật last_seen khi có bất kỳ update nào
             db.commit()
             db.refresh(server)
             logger.info(f"Updated server: {server.name} ({server.ip_address})")
@@ -575,11 +577,10 @@ class UserRepository:
 
     @staticmethod
     def create(db: Session, user_data: Dict[str, Any]) -> User:
-        import bcrypt
         pwd = user_data['password'].encode('utf-8')[:72]
-        user = User( # Assuming User model has email field
+        user = User(
             username=user_data['username'],
-            email=user_data.get('email'),
+            email=user_data.get('email', f"{user_data['username']}@zsentinel.local"),
             password_hash=bcrypt.hashpw(pwd, bcrypt.gensalt()).decode('utf-8'),
             role=user_data.get('role', 'operator')
         )
@@ -631,3 +632,119 @@ class UserRepository:
             db.commit()
             return True
         return False
+
+
+class AuditLogRepository:
+    @staticmethod
+    def record(
+        db: Session,
+        username: str,
+        action: str,
+        *,
+        resource_type: Optional[str] = None,
+        resource_id: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+        client_ip: Optional[str] = None,
+    ) -> AuditLog:
+        entry = AuditLog(
+            username=username,
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            details=details,
+            client_ip=client_ip,
+        )
+        db.add(entry)
+        db.commit()
+        db.refresh(entry)
+        return entry
+
+    @staticmethod
+    def list_entries(
+        db: Session,
+        limit: int = 100,
+        skip: int = 0,
+        action: Optional[str] = None,
+        username: Optional[str] = None,
+    ) -> List[AuditLog]:
+        q = db.query(AuditLog)
+        if action:
+            q = q.filter(AuditLog.action == action)
+        if username:
+            q = q.filter(AuditLog.username == username)
+        return q.order_by(AuditLog.created_at.desc()).offset(skip).limit(limit).all()
+
+
+class BlockHistoryRepository:
+    @staticmethod
+    def record(
+        db: Session,
+        ip_address: str,
+        action: str,
+        reason: Optional[str] = None,
+        duration_hours: Optional[int] = None,
+        performed_by: Optional[str] = None,
+        auto_blocked: bool = False,
+    ) -> BlockHistory:
+        entry = BlockHistory(
+            ip_address=ip_address,
+            action=action,
+            reason=reason,
+            duration_hours=duration_hours,
+            performed_by=performed_by,
+            auto_blocked=auto_blocked,
+        )
+        db.add(entry)
+        db.commit()
+        db.refresh(entry)
+        return entry
+
+    @staticmethod
+    def list_entries(
+        db: Session,
+        limit: int = 100,
+        ip_address: Optional[str] = None,
+    ) -> List[BlockHistory]:
+        q = db.query(BlockHistory)
+        if ip_address:
+            q = q.filter(BlockHistory.ip_address == ip_address)
+        return q.order_by(BlockHistory.created_at.desc()).limit(limit).all()
+
+
+class _GeoPolicyRepoBase:
+    model = None
+
+    @classmethod
+    def add_rule(cls, db: Session, country_code: str, country_name: str = None):
+        code = country_code.upper()
+        rule = cls.model(country_code=code, country_name=country_name)
+        db.add(rule)
+        db.commit()
+        db.refresh(rule)
+        return rule
+
+    @classmethod
+    def get_active_codes(cls, db: Session) -> List[str]:
+        rows = db.query(cls.model.country_code).filter(cls.model.is_active == True).all()
+        return [r[0] for r in rows]
+
+    @classmethod
+    def get_all(cls, db: Session):
+        return db.query(cls.model).order_by(cls.model.country_code).all()
+
+    @classmethod
+    def remove_rule(cls, db: Session, country_code: str) -> bool:
+        rule = db.query(cls.model).filter(cls.model.country_code == country_code.upper()).first()
+        if not rule:
+            return False
+        db.delete(rule)
+        db.commit()
+        return True
+
+
+class GeoAllowRepository(_GeoPolicyRepoBase):
+    model = GeoAllowRule
+
+
+class GeoWatchRepository(_GeoPolicyRepoBase):
+    model = GeoWatchRule

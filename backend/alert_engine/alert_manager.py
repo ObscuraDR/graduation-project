@@ -5,7 +5,7 @@ Enhanced alert generation with severity scoring, cooldown, and correlation
 
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from collections import defaultdict
 
@@ -16,7 +16,8 @@ from backend.database.repository import (
     AttackAlertRepository,
     AttackHistoryRepository,
     TrafficFlowRepository,
-    FlowFeatureRepository
+    FlowFeatureRepository,
+    BlacklistRepository,
 )
 from backend.notifications.email import email_service
 from backend.notifications.telegram import telegram_service
@@ -73,6 +74,8 @@ class AlertManager:
         self.whitelist: set = set()
         self.blacklist: set = set()
         self.geo_blocked_countries: set = set()  # ISO codes, e.g. {"CN", "RU"}
+        self.geo_allowed_countries: set = set()
+        self.geo_watched_countries: set = set()
 
         # Auto-block thresholds
         self.auto_block_enabled: bool = True
@@ -138,6 +141,10 @@ class AlertManager:
             self._auto_add_to_blacklist(src_ip, reason="geo-blocked", auto_blocked=True)
             return None
 
+        # Geo watch — elevate scrutiny (bump low → medium)
+        if self._is_geo_watched(src_ip) and severity == 'low':
+            severity = 'medium'
+
         # [NEW] Check Threat Intelligence (Placeholder for Stage 2)
         # if self._check_external_intelligence(src_ip):
         #     severity = 'critical' # Tăng mức độ nếu IP có danh tiếng xấu toàn cầu
@@ -162,7 +169,7 @@ class AlertManager:
             'confidence': confidence,
             'severity': adjusted_severity,
             'original_severity': severity,
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'status': 'active',
             'flow_key': flow_info.get('flow_key'),
             'features': prediction.get('features', {}),
@@ -223,7 +230,21 @@ class AlertManager:
         try:
             from backend.api.routes.geoip import lookup_country
             code = lookup_country(ip_address)
-            return code in self.geo_blocked_countries if code else False
+            if not code:
+                return False
+            if code in self.geo_allowed_countries:
+                return False
+            return code in self.geo_blocked_countries
+        except Exception:
+            return False
+
+    def _is_geo_watched(self, ip_address: str) -> bool:
+        if not self.geo_watched_countries:
+            return False
+        try:
+            from backend.api.routes.geoip import lookup_country
+            code = lookup_country(ip_address)
+            return code in self.geo_watched_countries if code else False
         except Exception:
             return False
 
@@ -232,7 +253,7 @@ class AlertManager:
         if ip_address in self.blacklist:
             return
         self.blacklist.add(ip_address)
-        expires_at = datetime.utcnow() + timedelta(seconds=duration_seconds) if duration_seconds else None
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=duration_seconds) if duration_seconds else None
         
         try:
             db = SessionLocal()
@@ -251,7 +272,7 @@ class AlertManager:
 
     def _check_auto_block(self, src_ip: str, attack_type: str):
         """Auto-block IP when alert count exceeds threshold within correlation window."""
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         window_start = current_time - timedelta(seconds=self.correlation_window)
         recent = [
             a for a in self.attack_patterns.get(src_ip, [])
@@ -273,14 +294,14 @@ class AlertManager:
         # in-memory fallback
         if ip_address not in self.alert_history:
             return False
-        return datetime.utcnow() < self.alert_history[ip_address] + timedelta(seconds=self.alert_cooldown)
+        return datetime.now(timezone.utc) < self.alert_history[ip_address] + timedelta(seconds=self.alert_cooldown)
 
     def _update_alert_history(self, ip_address: str):
         """Record cooldown in Redis (and in-memory as fallback)."""
         cache = get_cache()
         if cache.is_connected():
             cache.set_alert_cooldown(ip_address, self.alert_cooldown)
-        self.alert_history[ip_address] = datetime.utcnow()
+        self.alert_history[ip_address] = datetime.now(timezone.utc)
     
     def _apply_correlation(
         self,
@@ -288,19 +309,8 @@ class AlertManager:
         attack_type: str,
         current_severity: str
     ) -> str:
-        """
-        Apply correlation logic to adjust severity
-        
-        Args:
-            src_ip: Source IP address
-            attack_type: Attack type
-            current_severity: Current severity level
-        
-        Returns:
-            Adjusted severity level
-        """
-        # Get recent attacks from this IP
-        current_time = datetime.utcnow()
+        """Apply correlation logic to adjust severity."""
+        current_time = datetime.now(timezone.utc)
         window_start = current_time - timedelta(seconds=self.correlation_window)
         
         recent_attacks = [
@@ -345,7 +355,7 @@ class AlertManager:
         self.attack_patterns[src_ip].append(alert)
         
         # Clean old patterns outside correlation window
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         window_start = current_time - timedelta(seconds=self.correlation_window)
         
         self.attack_patterns[src_ip] = [
@@ -409,6 +419,20 @@ class AlertManager:
     def remove_geo_block(self, country_code: str):
         self.geo_blocked_countries.discard(country_code.upper())
         logger.info(f"Geo-block removed: {country_code.upper()}")
+
+    def add_geo_allow(self, country_code: str):
+        self.geo_allowed_countries.add(country_code.upper())
+        logger.info(f"Geo-allow added: {country_code.upper()}")
+
+    def remove_geo_allow(self, country_code: str):
+        self.geo_allowed_countries.discard(country_code.upper())
+
+    def add_geo_watch(self, country_code: str):
+        self.geo_watched_countries.add(country_code.upper())
+        logger.info(f"Geo-watch added: {country_code.upper()}")
+
+    def remove_geo_watch(self, country_code: str):
+        self.geo_watched_countries.discard(country_code.upper())
 
     def add_to_whitelist(self, ip_address: str):
         """Add IP to whitelist"""

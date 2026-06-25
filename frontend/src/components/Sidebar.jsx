@@ -2,8 +2,8 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   Shield, LayoutDashboard, AlertTriangle, Server, Settings,
-  LogOut, User, Globe, Bell, Brain, Network, FileText,
-  Users, // Add Users icon
+  LogOut, User, Globe, Bell, Brain, Network, FileText, ScrollText,
+  Users, History,
 } from 'lucide-react';
 import { getUser, logout, hasRole } from '../lib/auth';
 
@@ -16,19 +16,21 @@ export default function Sidebar() {
     { to: '/firewall', icon: Shield, label: 'Firewall' },
     { to: '/servers', icon: Server, label: 'Máy chủ' },
     { to: '/network', icon: Network, label: 'Lưu lượng' },
+    { to: '/logs', icon: ScrollText, label: 'Log Viewer' },
     { to: '/ai-insights', icon: Brain, label: 'AI Insights' },
     { to: '/reports', icon: FileText, label: 'Báo cáo' },
   ];
 
   const settingsItems = [
     { to: '/settings/profile', icon: User, label: 'Tài khoản' },
+    { to: '/audit', icon: History, label: 'Audit Log', roles: ['admin'] },
     { to: '/settings/notifications', icon: Bell, label: 'Thông báo' }, // FR09
     { to: '/geo-blocking', icon: Globe, label: 'Geo Blocking', roles: ['admin'] }, // FR04 - Dedicated page
     { to: '/settings/users', icon: Users, label: 'Quản lý User', roles: ['admin'] }, // FR01
   ];
 
   return (
-    <div className="w-64 bg-gray-800 text-gray-200 flex flex-col p-4 shadow-lg">
+    <div className="w-64 bg-gray-800 text-gray-200 flex flex-col p-4 shadow-lg h-screen sticky top-0 overflow-y-auto">
       {/* Logo */}
       <div className="flex items-center gap-3 mb-8 px-2">
         <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-blue-600/20">

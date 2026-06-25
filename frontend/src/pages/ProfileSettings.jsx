@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { User, Lock, Save, ShieldCheck, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
-import axios from 'axios';
-import { getUser, getToken } from '../lib/auth';
+import api from '../lib/api';
+import { getUser } from '../lib/auth';
 
 export default function ProfileSettings() {
   const user = getUser();
@@ -39,14 +39,10 @@ export default function ProfileSettings() {
 
     setLoading(true);
     try {
-      const token = getToken();
-      await axios.post('/api/auth/change-password', 
-        { 
-          old_password: formData.old_password, 
-          new_password: formData.new_password 
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await api.post('/auth/change-password', {
+        old_password: formData.old_password,
+        new_password: formData.new_password,
+      });
 
       setMessage({ type: 'success', text: 'Đổi mật khẩu thành công!' });
       setFormData({ old_password: '', new_password: '', confirm_password: '' });

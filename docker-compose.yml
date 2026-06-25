@@ -17,15 +17,10 @@ services:
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - MONGO_URI=mongodb://ids_mongo_user:ids_mongo_pass@mongodb:27017/ids_logs?authSource=admin
-      - MONGO_DB=ids_logs
-      - REDIS_URL=redis://:ids_redis_pass@redis:6379/0
     networks:
       - ids-network
     depends_on:
       - postgres
-      - mongodb
-      - redis
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -55,45 +50,6 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ids_user -d ids_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # MongoDB for logs
-  mongodb:
-    image: mongo:6
-    container_name: ids-mongodb
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ids_mongo_user
-      MONGO_INITDB_ROOT_PASSWORD: ids_mongo_pass
-      MONGO_INITDB_DATABASE: ids_logs
-    volumes:
-      - mongo-data:/data/db
-    ports:
-      - "27017:27017"
-    networks:
-      - ids-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "mongosh", "--username", "ids_mongo_user", "--password", "ids_mongo_pass", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Redis for caching
-  redis:
-    image: redis:7-alpine
-    container_name: ids-redis
-    command: redis-server --requirepass ids_redis_pass --appendonly yes
-    volumes:
-      - redis-data:/data
-    ports:
-      - "6379:6379"
-    networks:
-      - ids-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "ids_redis_pass", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -134,5 +90,3 @@ networks:
 
 volumes:
   postgres-data:
-  mongo-data:
-  redis-data:

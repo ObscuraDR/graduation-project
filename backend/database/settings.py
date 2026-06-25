@@ -25,7 +25,7 @@ def get_notification_settings(db: Session = Depends(get_db)):
 
 @router.post("/notifications")
 def update_notification_settings(data: NotificationSettingsSchema, db: Session = Depends(get_db)):
-    SettingRepository.update_value(db, "notifications", data.dict())
+    SettingRepository.update_value(db, "notifications", data.model_dump())
     
     # Thông báo cho AlertManager cập nhật lại cấu hình runtime (tùy chọn)
     from backend.alert_engine.alert_manager import get_alert_manager

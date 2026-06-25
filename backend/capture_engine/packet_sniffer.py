@@ -7,7 +7,7 @@ import sys
 import threading
 import queue
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Callable, List, Dict
 import time
 
@@ -134,7 +134,7 @@ class PacketSniffer:
             Dictionary with packet information
         """
         packet_info = {
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'length': len(packet),
             'protocol': None,
             'src_ip': None,
@@ -278,7 +278,7 @@ class PacketSniffer:
             'queue_size': self.packet_queue.qsize(),
             'elapsed_seconds': elapsed,
             'packets_per_second': rate,
-            'start_time': datetime.fromtimestamp(self.start_time).isoformat() if self.start_time else None
+            'start_time': datetime.fromtimestamp(self.start_time, tz=timezone.utc).isoformat() if self.start_time else None
         }
 
 

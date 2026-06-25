@@ -1,13 +1,12 @@
 """
-Redis Caching Strategy for IDS Backend
-Implements caching for frequently accessed data
+In-Memory Caching Strategy for IDS Backend
+Replaces Redis with a thread-safe in-memory dictionary
 """
 
 import json
 import logging
-from typing import Optional, Any
-import redis
-from backend.config import get_settings
+from typing import Optional, Any, Dict
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -17,45 +16,16 @@ class RedisCache:
     
     def __init__(self):
         """Initialize Redis cache connection"""
-        self.settings = get_settings()
-        self.redis_client = None
-        self._connect()
+        self._cache: Dict[str, str] = {}
+        self._expire: Dict[str, datetime] = {}
+        logger.info("In-memory cache initialized (Redis replaced)")
     
     def _connect(self):
-        """Connect to Redis"""
-        try:
-            if self.settings.redis_url:
-                self.redis_client = redis.Redis.from_url(
-                    self.settings.redis_url,
-                    decode_responses=True,
-                    socket_connect_timeout=5,
-                    socket_timeout=5,
-                )
-            else:
-                self.redis_client = redis.Redis(
-                    host=self.settings.redis_host,
-                    port=self.settings.redis_port,
-                    db=self.settings.redis_db,
-                    decode_responses=True,
-                    socket_connect_timeout=5,
-                    socket_timeout=5,
-                    retry_on_timeout=True,
-                )
-            self.redis_client.ping()
-            logger.info("Redis cache connected successfully")
-        except Exception as e:
-            logger.warning(f"Redis cache connection failed: {e}. Cache will be disabled.")
-            self.redis_client = None
+        pass
     
     def is_connected(self) -> bool:
-        """Check if Redis is connected"""
-        if not self.redis_client:
-            return False
-        try:
-            self.redis_client.ping()
-            return True
-        except:
-            return False
+        """In-memory cache is always available"""
+        return True
     
     def get(self, key: str) -> Optional[Any]:
         """Get value from cache"""
@@ -63,10 +33,13 @@ class RedisCache:
             return None
         
         try:
-            value = self.redis_client.get(key)
-            if value is None:
+            if key in self._expire and datetime.now() > self._expire[key]:
+                self.delete(key)
                 return None
-            return json.loads(value)
+            
+            value = self._cache.get(key)
+            # Nếu dùng In-memory thuần túy, không nhất thiết phải json.loads
+            return value 
         except Exception as e:
             logger.error(f"Cache get error for key {key}: {e}")
             return None
@@ -85,7 +58,8 @@ class RedisCache:
         
         try:
             serialized = json.dumps(value)
-            self.redis_client.setex(key, ttl, serialized)
+            self._cache[key] = serialized
+            self._expire[key] = datetime.now() + timedelta(seconds=ttl)
             return True
         except Exception as e:
             logger.error(f"Cache set error for key {key}: {e}")
@@ -97,7 +71,8 @@ class RedisCache:
             return False
         
         try:
-            self.redis_client.delete(key)
+            self._cache.pop(key, None)
+            self._expire.pop(key, None)
             return True
         except Exception as e:
             logger.error(f"Cache delete error for key {key}: {e}")
@@ -109,10 +84,11 @@ class RedisCache:
             return 0
         
         try:
-            keys = self.redis_client.keys(pattern)
-            if keys:
-                return self.redis_client.delete(*keys)
-            return 0
+            import fnmatch
+            keys_to_del = [k for k in self._cache.keys() if fnmatch.fnmatch(k, pattern)]
+            for k in keys_to_del:
+                self.delete(k)
+            return len(keys_to_del)
         except Exception as e:
             logger.error(f"Cache delete pattern error for {pattern}: {e}")
             return 0
@@ -122,7 +98,8 @@ class RedisCache:
         if not self.is_connected():
             return False
         try:
-            self.redis_client.flushdb()
+            self._cache.clear()
+            self._expire.clear()
             logger.info("Cache cleared")
             return True
         except Exception as e:
@@ -136,8 +113,7 @@ class RedisCache:
         if not self.is_connected():
             return False
         try:
-            key = f"alert_cooldown:{ip_address}"
-            self.redis_client.setex(key, ttl_seconds, "1")
+            self.set(f"alert_cooldown:{ip_address}", "1", ttl=ttl_seconds)
             return True
         except Exception as e:
             logger.error(f"set_alert_cooldown error for {ip_address}: {e}")
@@ -148,7 +124,7 @@ class RedisCache:
         if not self.is_connected():
             return False
         try:
-            return self.redis_client.exists(f"alert_cooldown:{ip_address}") == 1
+            return self.get(f"alert_cooldown:{ip_address}") is not None
         except Exception as e:
             logger.error(f"is_alert_in_cooldown error for {ip_address}: {e}")
             return False
@@ -159,7 +135,7 @@ class RedisCache:
             return
         try:
             if ip_address:
-                self.redis_client.delete(f"alert_cooldown:{ip_address}")
+                self.delete(f"alert_cooldown:{ip_address}")
             else:
                 self.delete_pattern("alert_cooldown:*")
         except Exception as e:

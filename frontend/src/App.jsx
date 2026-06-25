@@ -13,19 +13,24 @@ import NotificationSettings from './pages/NotificationSettings';
 import ProfileSettings from './pages/ProfileSettings'; // Import ProfileSettings
 import GeoBlocking from './pages/GeoBlocking'; // Import GeoBlocking
 import UserManagement from './pages/UserManagement'; // Import UserManagement
+import LogViewer from './pages/LogViewer';
+import AuditLogs from './pages/AuditLogs';
 import AIInsights from './pages/AIInsights';
 import Network from './pages/Network';
 import Reports from './pages/Reports';
+import Register from './pages/Register';
+
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
         
         {/* Protected Routes */}
         <Route 
-          path="/" 
+          path="/*" 
           element={
             <RequireAuth>
               <div className="flex min-h-screen bg-gray-900 text-gray-200">
@@ -42,6 +47,8 @@ export default function App() {
                     <Route path="settings/users" element={<UserManagement />} /> {/* New Route for FR01 */}
                     <Route path="ai-insights" element={<AIInsights />} />
                     <Route path="network" element={<Network />} />
+                    <Route path="logs" element={<LogViewer />} />
+                    <Route path="audit" element={<AuditLogs />} />
                     <Route path="reports" element={<Reports />} />
                   </Routes>
                 </div>

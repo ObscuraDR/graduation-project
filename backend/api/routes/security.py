@@ -4,26 +4,33 @@ Blacklist, Geo-blocking, and Security Report API routes
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from backend.database.connection import get_db
-from backend.database.models import AttackAlert, AttackHistory, Blacklist, GeoBlockRule
+from backend.database.models import AttackAlert, AttackHistory, Blacklist, GeoBlockRule, GeoAllowRule, GeoWatchRule
 from backend.database.repository import (
     BlacklistRepository,
     GeoBlockRepository,
+    GeoAllowRepository,
+    GeoWatchRepository,
+    BlockHistoryRepository,
     SecurityReportRepository,
+    ServerRepository,
 )
 from backend.alert_engine.alert_manager import get_alert_manager
 from backend.api.validation import validate_ipv4
+from backend.audit.logger import record_audit, get_client_ip, get_actor_username
 
 blacklist_router = APIRouter()
 geoblock_router = APIRouter()
+geoallow_router = APIRouter()
+geowatch_router = APIRouter()
 reports_router = APIRouter()
 
 
@@ -79,16 +86,16 @@ async def list_blacklist(db: Session = Depends(get_db)):
 
 
 @blacklist_router.post("/", status_code=status.HTTP_201_CREATED)
-async def add_to_blacklist(body: BlacklistAddRequest, db: Session = Depends(get_db)):
+async def add_to_blacklist(body: BlacklistAddRequest, request: Request, db: Session = Depends(get_db)):
     existing = BlacklistRepository.get_by_ip(db, body.ip_address)
     if existing and existing.is_active:
         raise HTTPException(status_code=409, detail="IP already blacklisted")
 
     expires_at = None
+    duration_hours = body.expires_hours
     if body.expires_hours:
-        expires_at = datetime.utcnow() + timedelta(hours=body.expires_hours)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=body.expires_hours)
 
-    # Lookup country
     country_code = None
     try:
         from backend.api.routes.geoip import lookup_country
@@ -105,6 +112,22 @@ async def add_to_blacklist(body: BlacklistAddRequest, db: Session = Depends(get_
         expires_at=expires_at,
     )
     get_alert_manager().add_to_blacklist(body.ip_address)
+    actor = get_actor_username(request)
+    BlockHistoryRepository.record(
+        db,
+        ip_address=body.ip_address,
+        action="block",
+        reason=body.reason,
+        duration_hours=duration_hours,
+        performed_by=actor,
+        auto_blocked=False,
+    )
+    record_audit(
+        db, actor, "blacklist_add",
+        resource_type="ip", resource_id=body.ip_address,
+        details={"reason": body.reason, "expires_hours": body.expires_hours},
+        client_ip=get_client_ip(request),
+    )
     return {"message": "IP added to blacklist", "entry": {
         "id": entry.id, "ip_address": entry.ip_address,
         "country_code": entry.country_code, "expires_at": entry.expires_at.isoformat() if entry.expires_at else None,
@@ -112,12 +135,47 @@ async def add_to_blacklist(body: BlacklistAddRequest, db: Session = Depends(get_
 
 
 @blacklist_router.delete("/{ip_address}")
-async def remove_from_blacklist(ip_address: str, db: Session = Depends(get_db)):
+async def remove_from_blacklist(ip_address: str, request: Request, db: Session = Depends(get_db)):
     ok = BlacklistRepository.deactivate(db, ip_address)
     if not ok:
         raise HTTPException(status_code=404, detail="IP not found in blacklist")
     get_alert_manager().remove_from_blacklist(ip_address)
+    actor = get_actor_username(request)
+    BlockHistoryRepository.record(
+        db,
+        ip_address=ip_address,
+        action="unblock",
+        reason="Manual unblock",
+        performed_by=actor,
+    )
+    record_audit(
+        db, actor, "blacklist_remove",
+        resource_type="ip", resource_id=ip_address,
+        client_ip=get_client_ip(request),
+    )
     return {"message": f"{ip_address} removed from blacklist"}
+
+
+@blacklist_router.get("/history")
+async def list_block_history(
+    limit: int = Query(100, ge=1, le=500),
+    ip_address: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    rows = BlockHistoryRepository.list_entries(db, limit=limit, ip_address=ip_address)
+    return [
+        {
+            "id": r.id,
+            "ip_address": r.ip_address,
+            "action": r.action,
+            "reason": r.reason,
+            "duration_hours": r.duration_hours,
+            "performed_by": r.performed_by,
+            "auto_blocked": r.auto_blocked,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
 
 
 # ──────────────────────────────────────────────
@@ -140,7 +198,7 @@ async def list_geo_rules(db: Session = Depends(get_db)):
 
 
 @geoblock_router.post("/", status_code=status.HTTP_201_CREATED)
-async def add_geo_rule(body: GeoBlockAddRequest, db: Session = Depends(get_db)):
+async def add_geo_rule(body: GeoBlockAddRequest, request: Request, db: Session = Depends(get_db)):
     existing = db.query(GeoBlockRule).filter_by(country_code=body.country_code.upper()).first()
     if existing:
         if not existing.is_active:
@@ -151,16 +209,110 @@ async def add_geo_rule(body: GeoBlockAddRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail="Country already blocked")
     rule = GeoBlockRepository.add_rule(db, body.country_code, body.country_name)
     get_alert_manager().add_geo_block(body.country_code.upper())
+    record_audit(
+        db, get_actor_username(request), "geo_block_add",
+        resource_type="country", resource_id=body.country_code.upper(),
+        details={"country_name": body.country_name},
+        client_ip=get_client_ip(request),
+    )
     return {"message": f"Geo-block added for {rule.country_code}", "id": rule.id}
 
 
 @geoblock_router.delete("/{country_code}")
-async def remove_geo_rule(country_code: str, db: Session = Depends(get_db)):
+async def remove_geo_rule(country_code: str, request: Request, db: Session = Depends(get_db)):
     ok = GeoBlockRepository.remove_rule(db, country_code)
     if not ok:
         raise HTTPException(status_code=404, detail="Geo-block rule not found")
     get_alert_manager().remove_geo_block(country_code.upper())
+    record_audit(
+        db, get_actor_username(request), "geo_block_remove",
+        resource_type="country", resource_id=country_code.upper(),
+        client_ip=get_client_ip(request),
+    )
     return {"message": f"Geo-block removed for {country_code.upper()}"}
+
+
+# ── Geo allow / watch ──────────────────────────────────────────────
+
+def _geo_policy_list(db: Session, repo, label: str):
+    rules = repo.get_all(db)
+    return [
+        {
+            "id": r.id,
+            "country_code": r.country_code,
+            "country_name": r.country_name,
+            "is_active": r.is_active,
+            "policy": label,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rules
+    ]
+
+
+@geoallow_router.get("/")
+async def list_geo_allow(db: Session = Depends(get_db)):
+    return _geo_policy_list(db, GeoAllowRepository, "allow")
+
+
+@geoallow_router.post("/", status_code=status.HTTP_201_CREATED)
+async def add_geo_allow(body: GeoBlockAddRequest, request: Request, db: Session = Depends(get_db)):
+    existing = db.query(GeoAllowRule).filter_by(country_code=body.country_code.upper()).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Country already in allow list")
+    rule = GeoAllowRepository.add_rule(db, body.country_code, body.country_name)
+    get_alert_manager().add_geo_allow(body.country_code.upper())
+    record_audit(
+        db, get_actor_username(request), "geo_allow_add",
+        resource_type="country", resource_id=body.country_code.upper(),
+        client_ip=get_client_ip(request),
+    )
+    return {"message": f"Allow rule added for {rule.country_code}", "id": rule.id}
+
+
+@geoallow_router.delete("/{country_code}")
+async def remove_geo_allow(country_code: str, request: Request, db: Session = Depends(get_db)):
+    if not GeoAllowRepository.remove_rule(db, country_code):
+        raise HTTPException(status_code=404, detail="Allow rule not found")
+    get_alert_manager().remove_geo_allow(country_code.upper())
+    record_audit(
+        db, get_actor_username(request), "geo_allow_remove",
+        resource_type="country", resource_id=country_code.upper(),
+        client_ip=get_client_ip(request),
+    )
+    return {"message": f"Allow rule removed for {country_code.upper()}"}
+
+
+@geowatch_router.get("/")
+async def list_geo_watch(db: Session = Depends(get_db)):
+    return _geo_policy_list(db, GeoWatchRepository, "watch")
+
+
+@geowatch_router.post("/", status_code=status.HTTP_201_CREATED)
+async def add_geo_watch(body: GeoBlockAddRequest, request: Request, db: Session = Depends(get_db)):
+    existing = db.query(GeoWatchRule).filter_by(country_code=body.country_code.upper()).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Country already in watch list")
+    rule = GeoWatchRepository.add_rule(db, body.country_code, body.country_name)
+    get_alert_manager().add_geo_watch(body.country_code.upper())
+    record_audit(
+        db, get_actor_username(request), "geo_watch_add",
+        resource_type="country", resource_id=body.country_code.upper(),
+        client_ip=get_client_ip(request),
+    )
+    return {"message": f"Watch rule added for {rule.country_code}", "id": rule.id}
+
+
+@geowatch_router.delete("/{country_code}")
+async def remove_geo_watch(country_code: str, request: Request, db: Session = Depends(get_db)):
+    if not GeoWatchRepository.remove_rule(db, country_code):
+        raise HTTPException(status_code=404, detail="Watch rule not found")
+    get_alert_manager().remove_geo_watch(country_code.upper())
+    record_audit(
+        db, get_actor_username(request), "geo_watch_remove",
+        resource_type="country", resource_id=country_code.upper(),
+        client_ip=get_client_ip(request),
+    )
+    return {"message": f"Watch rule removed for {country_code.upper()}"}
 
 
 # ──────────────────────────────────────────────
@@ -168,7 +320,7 @@ async def remove_geo_rule(country_code: str, db: Session = Depends(get_db)):
 # ──────────────────────────────────────────────
 
 def _build_report(db: Session, hours: int = 24) -> Dict[str, Any]:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     since = now - timedelta(hours=hours)
 
     alerts = db.query(AttackAlert).filter(AttackAlert.timestamp >= since).all()

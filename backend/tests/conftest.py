@@ -61,28 +61,6 @@ def _reset_rate_limiter():
         yield
 
 
-# ── auto-clear Redis alert cooldown between every test ────────────────────────
-# Nếu Redis đang chạy (Docker), alert cooldown state lưu vào Redis TTL keys.
-# Tests giả lập cooldown qua in-memory alert_history sẽ fail vì Redis vẫn block.
-# Fixture này clear Redis cooldown trước/sau mỗi test để đảm bảo isolation.
-
-@pytest.fixture(autouse=True)
-def _reset_redis_cooldown():
-    """Clear tất cả Redis alert_cooldown keys trước và sau mỗi test."""
-    def _clear():
-        try:
-            from backend.cache.redis_cache import get_cache
-            cache = get_cache()
-            if cache.is_connected():
-                cache.clear_alert_cooldown()  # clear all alert_cooldown:* keys
-        except Exception:
-            pass
-
-    _clear()
-    yield
-    _clear()
-
-
 # ── alert manager (no DB, no WebSocket) ──────────────────────────────────────
 
 @pytest.fixture
