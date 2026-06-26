@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Activity, AlertTriangle, Shield, Wifi, Server, Ban } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -9,25 +9,45 @@ import {
   fetchHealthDetailed, fetchAlerts, fetchDashboardStats, fetchTrafficStats,
 } from '../lib/api'
 import { connectWebSocket, onWebSocketMessage } from '../lib/websocket'
+import { formatDatetime, formatChartHour, nowTimeVN } from '../lib/datetime'
 
 const COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#22c55e', '#8b5cf6', '#ec4899']
 
+// Cache module-level: giữ data giữa các lần navigate
+let _dashboardCache = null
+let _recentAlertsCache = []
+let _healthCache = null
+
 export default function Overview() {
-  const [health, setHealth] = useState(null)
-  const [dashboard, setDashboard] = useState(null)
-  const [recentAlerts, setRecentAlerts] = useState([])
+  // Khởi tạo với cache cũ → không bị trắng khi quay lại trang
+  const [health, setHealth] = useState(_healthCache)
+  const [dashboard, setDashboard] = useState(_dashboardCache)
+  const [recentAlerts, setRecentAlerts] = useState(_recentAlertsCache)
   const [trafficData, setTrafficData] = useState([])
   const [liveAlerts, setLiveAlerts] = useState([])
+  const [isRefreshing, setIsRefreshing] = useState(!_dashboardCache)
 
   useEffect(() => {
-    fetchHealthDetailed().then(setHealth).catch(console.error)
-    fetchDashboardStats(24).then(setDashboard).catch(console.error)
-    fetchAlerts({ limit: 5 }).then(setRecentAlerts).catch(console.error)
+    // Fetch song song tất cả — không chờ tuần tự
+    const loadAll = async () => {
+      setIsRefreshing(true)
+      const [h, d, a] = await Promise.allSettled([
+        fetchHealthDetailed(),
+        fetchDashboardStats(24),
+        fetchAlerts({ limit: 5 }),
+      ])
+      if (h.status === 'fulfilled') { setHealth(h.value); _healthCache = h.value }
+      if (d.status === 'fulfilled') { setDashboard(d.value); _dashboardCache = d.value }
+      if (a.status === 'fulfilled') { setRecentAlerts(a.value); _recentAlertsCache = a.value }
+      setIsRefreshing(false)
+    }
 
-    // Fetch traffic stats ngay lập tức lần đầu
+    loadAll()
+
+    // Fetch traffic stats lần đầu
     fetchTrafficStats().then((data) => {
       setTrafficData([{
-        time: new Date().toLocaleTimeString(),
+        time: nowTimeVN(),
         packets: data.pipeline?.processed_packets || 0,
         flows: data.flows?.active_flows || 0,
       }])
@@ -37,14 +57,18 @@ export default function Overview() {
       fetchTrafficStats().then((data) => {
         setTrafficData((prev) => {
           const point = {
-            time: new Date().toLocaleTimeString(),
+            time: nowTimeVN(),
             packets: data.pipeline?.processed_packets || 0,
             flows: data.flows?.active_flows || 0,
           }
           return [...prev.slice(-30), point]
         })
       }).catch(() => {})
-      fetchDashboardStats(24).then(setDashboard).catch(() => {})
+      // Refresh dashboard nhẹ ở background
+      fetchDashboardStats(24).then((d) => {
+        setDashboard(d)
+        _dashboardCache = d
+      }).catch(() => {})
     }, 30000)
 
     connectWebSocket()
@@ -57,7 +81,6 @@ export default function Overview() {
     return () => {
       clearInterval(interval)
       unsub()
-      // Không disconnect WebSocket ở đây vì các trang khác có thể đang dùng
     }
   }, [])
 
@@ -107,7 +130,10 @@ export default function Overview() {
           <h1 className="text-2xl font-bold text-gray-900">System Overview</h1>
           <p className="text-sm text-gray-500">Real-time IDS monitoring dashboard</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {isRefreshing && (
+            <span className="text-xs text-gray-400 animate-pulse">Loading...</span>
+          )}
           <span className={`w-2.5 h-2.5 rounded-full ${health?.pipeline_running ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
           <span className="text-sm text-gray-600">
             {health?.pipeline_running ? 'Pipeline Running' : 'Pipeline Stopped'}
@@ -137,7 +163,7 @@ export default function Overview() {
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={dashboard.attack_trend}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="time" tick={{ fontSize: 10 }} tickFormatter={(v) => v?.slice(11, 16)} />
+                <XAxis dataKey="time" tick={{ fontSize: 10 }} tickFormatter={formatChartHour} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip />
                 <Line type="monotone" dataKey="count" stroke="#ef4444" strokeWidth={2} dot={false} name="Alerts" />
@@ -244,7 +270,7 @@ export default function Overview() {
               <div key={i} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
                 <div>
                   <p className="text-sm font-medium text-gray-800">{alert.attack_type}</p>
-                  <p className="text-xs text-gray-500">{alert.src_ip} · {alert.timestamp?.slice(11, 19)}</p>
+                  <p className="text-xs text-gray-500">{alert.src_ip} · {formatDatetime(alert.timestamp)}</p>
                 </div>
                 <SeverityBadge severity={alert.severity} />
               </div>

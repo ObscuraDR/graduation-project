@@ -4,6 +4,11 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import StatCard from '../components/StatCard'
 import ConfusionMatrix from '../components/ConfusionMatrix'
 import { fetchAlertEngineStats, fetchTrainingReport, explainPrediction } from '../lib/api'
+import { formatDatetime } from '../lib/datetime'
+
+// Module-level cache — training report không thay đổi thường xuyên
+let _trainingReportCache = null
+let _engineStatsCache = null
 
 // Per-class Precision / Recall / F1 calculated from confusion matrix
 const ATTACK_COLORS = {
@@ -84,18 +89,30 @@ const SAMPLE_ATTACK_FEATURES = {
 }
 
 export default function AIInsights() {
-  const [engineStats, setEngineStats] = useState(null)
-  const [trainingReport, setTrainingReport] = useState(null)
+  const [engineStats, setEngineStats] = useState(_engineStatsCache)
+  const [trainingReport, setTrainingReport] = useState(_trainingReportCache)
   const [reportError, setReportError] = useState(null)
   const [xaiResult, setXaiResult] = useState(null)
   const [xaiLoading, setXaiLoading] = useState(false)
   const [xaiError, setXaiError] = useState(null)
 
   useEffect(() => {
-    fetchAlertEngineStats().then(setEngineStats).catch(console.error)
-    fetchTrainingReport()
-      .then(setTrainingReport)
-      .catch((err) => setReportError(err.response?.data?.detail || 'Training report not available'))
+    // Fetch song song cả 2
+    Promise.allSettled([
+      fetchAlertEngineStats(),
+      _trainingReportCache ? Promise.resolve(_trainingReportCache) : fetchTrainingReport(),
+    ]).then(([statsRes, reportRes]) => {
+      if (statsRes.status === 'fulfilled') {
+        setEngineStats(statsRes.value)
+        _engineStatsCache = statsRes.value
+      }
+      if (reportRes.status === 'fulfilled') {
+        setTrainingReport(reportRes.value)
+        _trainingReportCache = reportRes.value
+      } else {
+        setReportError(reportRes.reason?.response?.data?.detail || 'Training report not available')
+      }
+    })
   }, [])
 
   const runExplanation = async () => {
@@ -223,7 +240,7 @@ export default function AIInsights() {
                 <span className="absolute -left-[9px] top-1 w-4 h-4 bg-blue-500 rounded-full border-2 border-white" />
                 <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Trained On</p>
                 <p className="text-sm font-medium text-gray-900 mt-0.5">
-                  {trainingReport.training_date?.slice(0, 19).replace('T', ' ')}
+                  {formatDatetime(trainingReport.training_date)}
                 </p>
               </div>
 

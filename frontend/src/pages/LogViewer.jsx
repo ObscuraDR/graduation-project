@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ScrollText, Search, Filter } from 'lucide-react'
 import { fetchSecurityLogs } from '../lib/api'
+import { formatDatetime } from '../lib/datetime'
 
 const LOG_SOURCES = ['', 'auth.log', 'nginx', 'windows', 'unknown']
 const EVENT_TYPES = ['', 'ssh_login_failed', 'generic', 'auth', 'security']
@@ -110,7 +111,7 @@ export default function LogViewer() {
                   className="hover:bg-gray-750 cursor-pointer"
                   onClick={() => setSelected(log)}
                 >
-                  <td className="px-4 py-2 text-xs">{log.timestamp ? new Date(log.timestamp).toLocaleString() : '—'}</td>
+                  <td className="px-4 py-2 text-xs">{formatDatetime(log.timestamp)}</td>
                   <td className="px-4 py-2">{log.server || '—'}</td>
                   <td className="px-4 py-2 font-mono text-blue-400">{log.source_ip || '—'}</td>
                   <td className="px-4 py-2">{log.country || '—'}</td>

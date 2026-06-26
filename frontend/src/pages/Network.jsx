@@ -13,11 +13,14 @@ const PROTOCOL_COLORS = {
   unknown: '#94a3b8',
 }
 
+// Module-level cache
+let _networkCache = null
+
 export default function Network() {
-  const [flows, setFlows] = useState([])
-  const [stats, setStats] = useState(null)
-  const [topTalkers, setTopTalkers] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [flows, setFlows] = useState(_networkCache?.flows || [])
+  const [stats, setStats] = useState(_networkCache?.stats || null)
+  const [topTalkers, setTopTalkers] = useState(_networkCache?.topTalkers || [])
+  const [loading, setLoading] = useState(!_networkCache)
   const [filterProto, setFilterProto] = useState('')
 
   const loadData = async () => {
@@ -31,6 +34,7 @@ export default function Network() {
       setFlows(flowsData)
       setStats(statsData)
       setTopTalkers(talkersData)
+      _networkCache = { flows: flowsData, stats: statsData, topTalkers: talkersData }
     } catch (err) {
       console.error('Failed to load network data:', err)
     }
@@ -39,7 +43,7 @@ export default function Network() {
 
   useEffect(() => {
     loadData()
-    const interval = setInterval(loadData, 10000) // refresh mỗi 10s
+    const interval = setInterval(loadData, 10000)
     return () => clearInterval(interval)
   }, [])
 

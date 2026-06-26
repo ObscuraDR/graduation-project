@@ -6,6 +6,7 @@ import {
   fetchBlacklist, addBlacklist, removeBlacklist,
   fetchGeoBlocks, addGeoBlock, removeGeoBlock,
 } from '../lib/api'
+import { formatDatetime } from '../lib/datetime'
 
 const TABS = ['Pipeline', 'Whitelist', 'Blacklist', 'Geo Block']
 
@@ -332,7 +333,7 @@ export default function Settings() {
                         {item.auto_blocked && <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">Auto</span>}
                       </td>
                       <td className="px-3 py-2 text-xs text-gray-500">
-                        {item.expires_at ? new Date(item.expires_at).toLocaleDateString() : 'Permanent'}
+                        {item.expires_at ? formatDatetime(item.expires_at) : 'Permanent'}
                       </td>
                       <td className="px-3 py-2">
                         <button onClick={() => handleRemoveBlacklist(item.ip_address)}

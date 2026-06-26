@@ -8,7 +8,7 @@ function getApiKey() {
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 10000,
+  timeout: 15000, // tăng từ 10s lên 15s cho các query nặng
 })
 
 // Crucial for sending/receiving cookies with cross-origin requests

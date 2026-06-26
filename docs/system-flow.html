@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Z-Sentinel IDS — Tổng quan luồng hệ thống</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Consolas', 'Courier New', monospace; background: #f5f5f5; padding: 24px; color: #222; }
+  h1 { font-size: 18px; font-weight: bold; color: #111; margin-bottom: 20px; border-bottom: 2px solid #ccc; padding-bottom: 8px; }
+  h2 { font-size: 14px; font-weight: bold; color: #333; margin: 28px 0 12px; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
+  .section { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 20px; margin-bottom: 20px; }
+  .flow-grid { display: grid; gap: 0; }
+  /* Colors */
+  .c-phone   { color: #1565c0; }
+  .c-net     { color: #6a1b9a; }
+  .c-backend { color: #2e7d32; }
+  .c-db      { color: #e65100; }
+  .c-worker  { color: #37474f; }
+  .c-ws      { color: #ad1457; }
+  .c-fe      { color: #00695c; }
+  .c-arrow   { color: #555; }
+  .c-note    { color: #888; font-style: italic; }
+  .bold { font-weight: bold; }
+  pre { font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; line-height: 1.7; white-space: pre; overflow-x: auto; }
+</style>
+</head>
+<body>
+<h1>Z-Sentinel IDS — Tổng quan luồng hệ thống</h1>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- LUỒNG 1: AGENT → BACKEND (Server Monitoring)               -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>① Luồng giám sát máy chủ con (Agent → Backend)</h2>
+<div class="section">
+<pre>
+<span class="c-phone bold">ĐIỆN THOẠI / MÁY CHỦ CON</span>              <span class="c-backend bold">MÁY TÍNH CHÍNH (IDS)</span>
+<span class="c-phone bold">─────────────────────────────────</span>       <span class="c-backend bold">──────────────────────────────────────</span>
+<span class="c-phone bold">agent.py</span>                                <span class="c-backend bold">Backend FastAPI</span>           <span class="c-db bold">PostgreSQL</span>
+  │                                          │                              │
+  │  1. Thu thập metrics (psutil)            │                              │
+  │     CPU=45%, RAM=60%, Disk=23%           │                              │
+  │                                          │                              │
+  │  2. Tạo chữ ký HMAC-SHA256              │                              │
+  │     sign(payload, API_KEY)               │                              │
+  │                                          │                              │
+  │  3. POST mỗi 10 giây ──────────────────►│                              │
+  │     /api/servers/1/status               │                              │
+  │     X-API-Key: changeme...              │  4. Xác thực X-API-Key       │
+  │     ?cpu_usage=45&ram_usage=60...       │  5. verify_api_key()         │
+  │                                          │                              │
+  │                                          │  6. UPDATE servers SET ─────►│
+  │                                          │     cpu=45, ram=60           │ servers table
+  │                                          │     last_seen=NOW()          │
+  │                                          │                              │
+  │                                          │  7. INSERT history ─────────►│
+  │                                          │     server_metric_history    │ history table
+  │                                          │                              │
+  │  8. Trả về 200 OK ◄─────────────────────│                              │
+  │     {id:1, status:"online", ...}         │                              │
+  │                                          │                              │
+  │  ← lặp lại sau 10 giây →               │                              │
+                                             │                              │
+                              Background Worker (mỗi 10s):                 │
+                              9. Đọc tất cả servers ◄─────────────────────│
+                              10. Nếu last_seen > 30s → status="offline"  │
+                              11. Nếu lại nhận được tin → status="online" │
+                                             │
+                                             ▼
+                                  <span class="c-fe bold">Frontend Dashboard</span>
+                                  Tab "Máy chủ" hiển thị
+                                  ONLINE/OFFLINE + CPU/RAM/Disk
+                                  Biểu đồ lịch sử (history chart)
+</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- LUỒNG 2: PACKET CAPTURE → ML → ALERT                        -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>② Luồng phát hiện xâm nhập (Packet Capture → ML → Alert)</h2>
+<div class="section">
+<pre>
+<span class="c-phone bold">MẠNG (Gói tin thật)</span>    <span class="c-backend bold">PIPELINE IDS (Backend)</span>                          <span class="c-db bold">PostgreSQL</span>   <span class="c-fe bold">Dashboard</span>
+<span class="c-phone bold">────────────────────</span>    <span class="c-backend bold">────────────────────────────────────────────────</span>   <span class="c-db bold">──────────</span>   <span class="c-fe bold">─────────</span>
+       │                       │                                               │             │
+       │  Gói tin TCP/UDP/ICMP │                                               │             │
+       │──────────────────────►│ 1. PacketSniffer (Scapy)                     │             │
+       │                       │    capture từ network interface               │             │
+       │                       │    (eth0 / Wi-Fi)                             │             │
+       │                       │                                               │             │
+       │                       │ 2. FlowBuilder                                │             │
+       │                       │    Gom packets → Flow (5-tuple)              │             │
+       │                       │    src_ip:port → dst_ip:port proto            │             │
+       │                       │                                               │             │
+       │                       │ 3. FeatureExtractor                           │             │
+       │                       │    Trích 20 features từ Flow:                 │             │
+       │                       │    packet_rate, syn_count, byte_rate...       │             │
+       │                       │                                               │             │
+       │                       │ 4. Predictor (ML Model)                       │             │
+       │                       │    Random Forest / Ensemble                   │             │
+       │                       │    → attack_type="DDoS"                       │             │
+       │                       │    → confidence=0.92                          │             │
+       │                       │    → severity="critical"                      │             │
+       │                       │                                               │             │
+       │                       │ 5. AlertManager                               │             │
+       │                       │    Kiểm tra whitelist/blacklist/geoblock      │             │
+       │                       │    Áp dụng cooldown (tránh spam)              │             │
+       │                       │    Correlation (tăng severity nếu lặp lại)   │             │
+       │                       │                                               │             │
+       │                       │ 6. Lưu Alert vào DB ─────────────────────────►│             │
+       │                       │    attack_alerts table                        │             │
+       │                       │                                               │             │
+       │                       │ 7. Auto-block IP ────────────────────────────►│             │
+       │                       │    (nếu vượt ngưỡng 10 alerts)               │ blacklist   │
+       │                       │                                               │             │
+       │                       │ 8. Enqueue → AlertBroadcastBridge             │             │
+       │                       │    (thread-safe queue)                        │             │
+       │                       │                                               │             │
+       │                       │ 9. WebSocket Broadcast ─────────────────────────────────► │
+       │                       │    /ws → tất cả client đang kết nối           │  REAL-TIME  │
+       │                       │    {"type":"alert","data":{...}}              │  Live Feed  │
+       │                       │                                               │             │
+       │                       │ 10. Email/Telegram/Discord (tùy cấu hình)    │             │
+</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- LUỒNG 3: DEMO REPLAY                                         -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>③ Luồng Demo Replay (CICIDS2017 → ML → Alert)</h2>
+<div class="section">
+<pre>
+<span class="c-phone bold">NGƯỜI DÙNG / POSTMAN</span>   <span class="c-backend bold">DEMO ENGINE (Backend)</span>                           <span class="c-db bold">PostgreSQL</span>   <span class="c-fe bold">Dashboard</span>
+<span class="c-phone bold">─────────────────────</span>   <span class="c-backend bold">──────────────────────────────────────────────</span>   <span class="c-db bold">──────────</span>   <span class="c-fe bold">─────────</span>
+       │                       │                                               │             │
+       │  POST /api/demo/start  │                                               │             │
+       │  ?delay_sec=0.5        │                                               │             │
+       │  &rounds=2             │                                               │             │
+       │──────────────────────►│                                               │             │
+       │                       │ 1. Load attack_samples.csv                    │             │
+       │                       │    (40 rows, 5 attack classes)                │             │
+       │                       │    DDoS, PortScan, BruteForce, Botnet...      │             │
+       │                       │                                               │             │
+       │  200 OK ◄─────────────│ 2. Chạy background thread                    │             │
+       │  "Attack replay        │                                               │             │
+       │   started"            │ 3. Với mỗi sample (mỗi 0.5 giây):           │             │
+       │                       │    a. Lấy features từ CSV                    │             │
+       │                       │    b. Tạo synthetic IP giả                   │             │
+       │                       │       203.0.113.X (RFC5737)                  │             │
+       │                       │                                               │             │
+       │                       │    c. Predictor.predict_features(features)   │             │
+       │                       │       → attack_type="DDoS"                   │             │
+       │                       │       → confidence=0.94                      │             │
+       │                       │                                               │             │
+       │                       │    d. AlertManager.generate_alert()          │             │
+       │                       │       → Kiểm tra cooldown                    │             │
+       │                       │       → Tạo alert_id (UUID)                  │             │
+       │                       │       → Lưu DB ──────────────────────────────►│             │
+       │                       │                                               │ alert saved │
+       │                       │    e. WebSocket Broadcast ──────────────────────────────► │
+       │                       │       {"type":"alert",                        │  REAL-TIME  │
+       │                       │        "data":{attack_type:"DDoS",...}}       │  Live Feed  │
+       │                       │                                               │             │
+       │                       │ 4. Lặp lại cho 80 samples (2 rounds)         │             │
+       │                       │    mỗi sample cách nhau 0.5 giây             │             │
+       │                       │                                               │             │
+       │  GET /api/demo/status  │                                               │             │
+       │──────────────────────►│ 5. Trả về thống kê:                          │             │
+       │  ◄─────────────────── │    replayed:80, detected:2, broadcast:2      │             │
+</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- LUỒNG 4: ĐĂNG NHẬP & XÁC THỰC                              -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>④ Luồng xác thực người dùng (Login → JWT → Dashboard)</h2>
+<div class="section">
+<pre>
+<span class="c-fe bold">TRÌNH DUYỆT (Frontend)</span>         <span class="c-backend bold">Backend FastAPI</span>                    <span class="c-db bold">PostgreSQL</span>
+<span class="c-fe bold">───────────────────────</span>         <span class="c-backend bold">──────────────────────────────────</span>   <span class="c-db bold">──────────</span>
+        │                               │                               │
+        │  POST /api/auth/login          │                               │
+        │  {"username":"admin",          │                               │
+        │   "password":"admin123"}       │                               │
+        │──────────────────────────────►│  1. Kiểm tra lockout         │
+        │                               │  2. Truy vấn users table ────►│
+        │                               │     SELECT * FROM users       │ users table
+        │                               │     WHERE username='admin'    │
+        │                               │  3. bcrypt.verify(password)   │
+        │                               │  4. Tạo JWT token             │
+        │                               │     {sub:"admin",role:"admin"}│
+        │                               │     expires=30 phút           │
+        │                               │  5. Tạo CSRF token            │
+        │                               │  6. Ghi audit log ───────────►│
+        │                               │                               │ audit_logs
+        │  200 OK ◄─────────────────────│                               │
+        │  Set-Cookie: access_token     │                               │
+        │  Set-Cookie: csrf_token       │                               │
+        │  {user:{id,username,role}}    │                               │
+        │                               │                               │
+        │  Lưu user vào localStorage    │                               │
+        │  → Redirect về Dashboard      │                               │
+        │                               │                               │
+        │  GET /api/auth/me ────────────►│  7. Đọc JWT từ cookie        │
+        │  (mỗi khi reload trang)        │  8. Verify JWT signature      │
+        │  ◄─────────────────────────── │  9. Trả về user info          │
+        │  {username, role, email}       │                               │
+        │                               │                               │
+        │  Mọi request tiếp theo:        │                               │
+        │  Cookie: access_token=Bearer..│                               │
+        │  X-CSRF-Token: xxxx           │                               │
+</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- LUỒNG 5: WEBSOCKET REAL-TIME                                -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>⑤ Luồng WebSocket Real-time (Backend → Dashboard)</h2>
+<div class="section">
+<pre>
+<span class="c-fe bold">TRÌNH DUYỆT (Overview Page)</span>    <span class="c-backend bold">WebSocket Manager</span>       <span class="c-backend bold">AlertBroadcastBridge</span>    <span class="c-backend bold">AlertManager</span>
+<span class="c-fe bold">────────────────────────────</span>    <span class="c-backend bold">──────────────────</span>       <span class="c-backend bold">────────────────────</span>    <span class="c-backend bold">────────────</span>
+        │                               │                         │                       │
+        │  WS Connect → /ws             │                         │                       │
+        │──────────────────────────────►│                         │                       │
+        │  WebSocket OPEN               │                         │                       │
+        │  ◄─────────────────────────── │                         │                       │
+        │                               │                         │                       │
+        │  (chờ events...)              │                         │                       │
+        │                               │                         │                       │
+        │                               │              Sniffer/Demo phát hiện tấn công    │
+        │                               │                         │  ◄──────────────────  │
+        │                               │                         │  enqueue_alert(alert) │
+        │                               │                         │  (thread-safe queue)  │
+        │                               │                         │                       │
+        │                               │  _consume_loop()        │                       │
+        │                               │  ◄──────────────────────│                       │
+        │                               │  broadcast(alert)       │                       │
+        │                               │                         │                       │
+        │  {"type":"alert",             │                         │                       │
+        │   "data":{                    │                         │                       │
+        │     "attack_type":"DDoS",     │                         │                       │
+        │     "severity":"critical",    │                         │                       │
+        │     "src_ip":"203.0.113.10",  │                         │                       │
+        │     "confidence":0.94,        │                         │                       │
+        │     "timestamp":"..."}}       │                         │                       │
+        │  ◄─────────────────────────── │                         │                       │
+        │                               │                         │                       │
+        │  setLiveAlerts(prev =>        │                         │                       │
+        │    [msg.data, ...prev]        │                         │                       │
+        │    .slice(0, 10))             │                         │                       │
+        │                               │                         │                       │
+        │  UI cập nhật ngay lập tức     │                         │                       │
+        │  "Live Alert Feed" 🔴         │                         │                       │
+</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- LUỒNG 6: GEO BLOCK + BLACKLIST + FIREWALL                   -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>⑥ Luồng bảo mật: Blacklist / GeoBlock / Auto-block</h2>
+<div class="section">
+<pre>
+<span class="c-fe bold">ADMIN (Dashboard)</span>       <span class="c-backend bold">Backend API</span>            <span class="c-db bold">PostgreSQL</span>       <span class="c-backend bold">AlertManager</span>
+<span class="c-fe bold">──────────────────</span>       <span class="c-backend bold">──────────────────</span>      <span class="c-db bold">──────────</span>       <span class="c-backend bold">────────────</span>
+        │                       │                       │                    │
+        │  POST /api/blacklist/  │                       │                    │
+        │  {ip:"1.2.3.4",        │                       │                    │
+        │   reason:"Attacker",   │                       │                    │
+        │   expires_hours:24}    │                       │                    │
+        │──────────────────────►│  1. Validate IP       │                    │
+        │                       │  2. GeoIP lookup      │                    │
+        │                       │  3. INSERT blacklist ─►│                    │
+        │                       │                       │ blacklist table     │
+        │                       │  4. add_to_blacklist() ────────────────────►│
+        │                       │                       │            in-memory set
+        │                       │  5. Ghi BlockHistory ─►│                    │
+        │                       │  6. Ghi AuditLog ─────►│                    │
+        │  200 OK ◄─────────────│                       │                    │
+        │                       │                       │                    │
+        │  POST /api/geoblock/   │                       │                    │
+        │  {country_code:"CN"}   │                       │                    │
+        │──────────────────────►│  7. INSERT geo_block ─►│                    │
+        │                       │                       │ geo_block_rules     │
+        │                       │  8. add_geo_block() ───────────────────────►│
+        │                       │                       │            geo_blocked set
+        │  200 OK ◄─────────────│                       │                    │
+        │                       │                       │                    │
+        │                       │         Khi có gói tin từ IP bị block:      │
+        │                       │                       │  _is_blacklisted()  │
+        │                       │                       │  → True             │
+        │                       │                       │  Alert bị suppress  │
+        │                       │                       │                    │
+        │                       │                       │  _is_geo_blocked()  │
+        │                       │                       │  → lookup country   │
+        │                       │                       │  → True → suppress  │
+        │                       │                       │                    │
+        │                  AUTO-BLOCK (không cần admin):                      │
+        │                       │                       │  10+ alerts từ 1 IP │
+        │                       │                       │  trong correlation  │
+        │                       │                       │  window (60s)       │
+        │                       │                       │  → _auto_add_to_blacklist()
+        │                       │                       │  → INSERT blacklist  │
+        │                       │                       │  → add in-memory    │
+        │                       │                       │  → IP bị chặn ngay  │
+</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TỔNG THỂ HỆ THỐNG                                           -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>⑦ Kiến trúc tổng thể hệ thống</h2>
+<div class="section">
+<pre>
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                          Z-SENTINEL IDS — ARCHITECTURE                          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+<span class="c-phone bold">┌──────────────────────┐</span>    WiFi/LAN    <span class="c-backend bold">┌────────────────────────────────────────────┐</span>
+<span class="c-phone bold">│   ĐIỆN THOẠI         │</span>               <span class="c-backend bold">│          MÁY TÍNH CHÍNH (Windows)          │</span>
+<span class="c-phone bold">│   (Kali NetHunter)   │</span>               <span class="c-backend bold">│                                            │</span>
+<span class="c-phone bold">│                      │</span>               <span class="c-backend bold">│  ┌──────────────────────────────────────┐  │</span>
+<span class="c-phone bold">│  agent.py            │──HTTP POST────►│  │      FastAPI Backend (:8000)          │  │</span>
+<span class="c-phone bold">│  psutil metrics      │  mỗi 10s       │  │                                      │  │</span>
+<span class="c-phone bold">│  CPU/RAM/Disk        │               │  │  /api/servers   /api/alerts           │  │</span>
+<span class="c-phone bold">│                      │               │  │  /api/sniffer   /api/demo             │  │</span>
+<span class="c-phone bold">│  (tùy chọn)          │               │  │  /api/auth      /ws (WebSocket)       │  │</span>
+<span class="c-phone bold">│  nmap, hping3        │──gói tin────── │  └──────────────┬─────────────────────┬─┘  │</span>
+<span class="c-phone bold">│  tấn công thật       │  qua mạng      │                 │                     │    │</span>
+<span class="c-phone bold">└──────────────────────┘</span>               <span class="c-backend bold">│                 ▼                     ▼    │</span>
+                                        <span class="c-backend bold">│  ┌──────────────────┐  ┌────────────────────┐│</span>
+                                        <span class="c-backend bold">│  │   PostgreSQL     │  │    In-Memory Cache ││</span>
+                                        <span class="c-backend bold">│  │   (:5433)        │  │    (Redis-like)    ││</span>
+                                        <span class="c-backend bold">│  │                  │  │                    ││</span>
+                                        <span class="c-backend bold">│  │  servers         │  │  alert cooldown    ││</span>
+                                        <span class="c-backend bold">│  │  attack_alerts   │  │  whitelist set     ││</span>
+                                        <span class="c-backend bold">│  │  blacklist       │  │  blacklist set     ││</span>
+                                        <span class="c-backend bold">│  │  audit_logs      │  │  geo_block set     ││</span>
+                                        <span class="c-backend bold">│  │  history...      │  │                    ││</span>
+                                        <span class="c-backend bold">│  └──────────────────┘  └────────────────────┘│</span>
+                                        <span class="c-backend bold">│                                            │</span>
+<span class="c-fe bold">┌──────────────────────┐</span>               <span class="c-backend bold">│  ┌──────────────────────────────────────┐  │</span>
+<span class="c-fe bold">│   TRÌNH DUYỆT        │</span>               <span class="c-backend bold">│  │     React Frontend (:3000)           │  │</span>
+<span class="c-fe bold">│   localhost:3000     │◄──────────────│  │                                      │  │</span>
+<span class="c-fe bold">│                      │  HTTP GET      │  │  Overview  Alerts  Firewall          │  │</span>
+<span class="c-fe bold">│  Overview (live)     │  WebSocket WS  │  │  Servers   GeoBlock  AI Insights     │  │</span>
+<span class="c-fe bold">│  Alerts              │  push alerts   │  │  Reports   Settings  AuditLogs       │  │</span>
+<span class="c-fe bold">│  Servers             │               │  └──────────────────────────────────────┘  │</span>
+<span class="c-fe bold">│  GeoBlock            │               └────────────────────────────────────────────┘</span>
+<span class="c-fe bold">│  AI Insights         │</span>
+<span class="c-fe bold">│  Settings            │</span>
+<span class="c-fe bold">└──────────────────────┘</span>
+
+<span class="c-note">Chú thích màu sắc:</span>
+<span class="c-phone">■ Xanh đậm  = Điện thoại / Máy chủ con (agent)</span>
+<span class="c-backend">■ Xanh lá   = Backend FastAPI (máy tính chính)</span>
+<span class="c-db">■ Cam       = PostgreSQL Database</span>
+<span class="c-ws">■ Hồng      = WebSocket real-time</span>
+<span class="c-fe">■ Teal      = Frontend / Dashboard</span>
+<span class="c-worker">■ Xám đậm   = Background Workers</span>
+</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- BẢNG TÓM TẮT                                                -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>⑧ Bảng tóm tắt các luồng dữ liệu</h2>
+<div class="section">
+<pre>
+┌────┬──────────────────────────┬─────────────────┬────────────────┬───────────────────────────┐
+│ #  │ Luồng                    │ Giao thức        │ Tần suất       │ Mục đích                  │
+├────┼──────────────────────────┼─────────────────┼────────────────┼───────────────────────────┤
+│ ①  │ Phone → Backend          │ HTTP POST        │ Mỗi 10 giây   │ Gửi metrics CPU/RAM/Disk  │
+│ ②  │ Network → Pipeline → DB  │ Packet capture   │ Real-time      │ Phát hiện tấn công thật   │
+│ ③  │ Demo CSV → ML → Alert    │ Internal thread  │ Mỗi 0.5 giây  │ Demo tấn công giả lập     │
+│ ④  │ Browser → /api/auth      │ HTTP POST+Cookie │ 1 lần login   │ Xác thực JWT              │
+│ ⑤  │ Backend → Browser        │ WebSocket        │ Real-time push │ Alert live feed           │
+│ ⑥  │ Admin → Blacklist/Geo    │ HTTP POST        │ Khi cần        │ Chặn IP / quốc gia        │
+│ ⑦  │ Worker → DB              │ Internal async   │ Mỗi 10 giây   │ Kiểm tra server offline   │
+│ ⑧  │ Backend → Notifications  │ SMTP/HTTP POST   │ Khi có alert  │ Email/Telegram/Discord    │
+└────┴──────────────────────────┴─────────────────┴────────────────┴───────────────────────────┘
+</pre>
+</div>
+
+</body>
+</html>

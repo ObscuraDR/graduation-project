@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { FileText, Download, RefreshCw, Save } from 'lucide-react'
 import { fetchSecurityReport } from '../lib/api'
 import SeverityBadge from '../components/SeverityBadge'
+import { formatDatetime } from '../lib/datetime'
 
 export default function Reports() {
   const [hours, setHours] = useState(24)
@@ -121,10 +122,10 @@ export default function Reports() {
         <div className="space-y-6">
           {/* Period */}
           <div className="text-xs text-gray-500">
-            Kỳ báo cáo: <span className="font-medium">{report.period_start?.slice(0, 19).replace('T', ' ')}</span>
+            Kỳ báo cáo: <span className="font-medium">{formatDatetime(report.period_start)}</span>
             {' → '}
-            <span className="font-medium">{report.period_end?.slice(0, 19).replace('T', ' ')}</span>
-            {' | Generated: '}{report.generated_at?.slice(0, 19).replace('T', ' ')}
+            <span className="font-medium">{formatDatetime(report.period_end)}</span>
+            {' | Generated: '}{formatDatetime(report.generated_at)}
           </div>
 
           {/* KPI Cards */}

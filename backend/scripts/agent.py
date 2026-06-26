@@ -46,17 +46,56 @@ SSL_VERIFY = False if _ssl_env.lower() == "false" else True
 
 
 def get_system_stats() -> dict:
-    """Thu thập các chỉ số hệ thống hiện tại."""
-    cpu    = psutil.cpu_percent(interval=1)
-    ram    = psutil.virtual_memory().percent
-    # Dùng '/' trên Linux/Mac, 'C:\\' trên Windows
+    """Thu thập các chỉ số hệ thống hiện tại. Xử lý gracefully khi thiếu quyền."""
+    # CPU — có thể lỗi trong container/NetHunter
+    try:
+        cpu = psutil.cpu_percent(interval=1)
+    except Exception:
+        try:
+            # Fallback: đọc /proc/stat thủ công
+            with open('/proc/stat', 'r') as f:
+                line = f.readline()
+            fields = [float(x) for x in line.strip().split()[1:]]
+            idle = fields[3]
+            total = sum(fields)
+            cpu = round((1.0 - idle / total) * 100, 1) if total > 0 else 0.0
+        except Exception:
+            cpu = 0.0
+
+    # RAM
+    try:
+        ram = psutil.virtual_memory().percent
+    except Exception:
+        try:
+            with open('/proc/meminfo', 'r') as f:
+                lines = f.readlines()
+            mem = {}
+            for line in lines:
+                parts = line.split()
+                if len(parts) >= 2:
+                    mem[parts[0].rstrip(':')] = int(parts[1])
+            total_mem = mem.get('MemTotal', 1)
+            avail_mem = mem.get('MemAvailable', mem.get('MemFree', 0))
+            ram = round((1 - avail_mem / total_mem) * 100, 1) if total_mem > 0 else 0.0
+        except Exception:
+            ram = 0.0
+
+    # Disk
     disk_path = 'C:\\' if platform.system() == 'Windows' else '/'
     try:
         disk = psutil.disk_usage(disk_path).percent
     except Exception:
-        disk = 0.0
+        try:
+            import subprocess
+            out = subprocess.check_output(['df', '-h', '/'], text=True).splitlines()
+            if len(out) > 1:
+                parts = out[1].split()
+                disk = float(parts[4].replace('%', ''))
+            else:
+                disk = 0.0
+        except Exception:
+            disk = 0.0
 
-    # Trạng thái firewall (heuristic đơn giản)
     fw_status = "active" if platform.system() == "Linux" else "enabled"
 
     return {

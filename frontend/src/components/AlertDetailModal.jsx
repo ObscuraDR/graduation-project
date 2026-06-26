@@ -1,6 +1,7 @@
 import { X, Shield, AlertTriangle, Network, Clock, Brain } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import SeverityBadge from './SeverityBadge'
+import { formatDatetime } from '../lib/datetime'
 
 export default function AlertDetailModal({ alert, onClose }) {
   if (!alert) return null
@@ -109,7 +110,7 @@ export default function AlertDetailModal({ alert, onClose }) {
           {/* Timestamp */}
           <div className="flex items-center gap-2 text-sm text-gray-500 pt-3 border-t border-gray-100">
             <Clock className="w-4 h-4" />
-            <span>Detected at: {alert.timestamp?.replace('T', ' ').slice(0, 19)}</span>
+            <span>Detected at: {formatDatetime(alert.timestamp)}</span>
           </div>
 
           {/* Notes */}

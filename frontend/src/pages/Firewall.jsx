@@ -4,6 +4,7 @@ import {
   fetchBlacklist, removeBlacklist, addBlacklistWithDuration, fetchBlockHistory,
 } from '../lib/api';
 import { hasRole } from '../lib/auth';
+import { formatDatetime } from '../lib/datetime';
 
 const BLOCK_PRESETS = [
   { label: '1 giờ', hours: 1 },
@@ -172,10 +173,10 @@ export default function Firewall() {
                 <tr key={item.ip_address}>
                   <td className="px-6 py-4 font-mono text-blue-400">{item.ip_address}</td>
                   <td className="px-6 py-4 text-sm">{item.reason || '—'}</td>
-                  <td className="px-6 py-4 text-xs">{item.created_at ? new Date(item.created_at).toLocaleString() : '—'}</td>
+                  <td className="px-6 py-4 text-xs">{formatDatetime(item.created_at)}</td>
                   <td className="px-6 py-4 text-xs text-orange-400">
                     <Clock className="w-3 h-3 inline mr-1" />
-                    {item.expires_at ? new Date(item.expires_at).toLocaleString() : 'Vĩnh viễn'}
+                    {item.expires_at ? formatDatetime(item.expires_at) : 'Vĩnh viễn'}
                   </td>
                   <td className="px-6 py-4 text-right">
                     {canManage && (
@@ -204,7 +205,7 @@ export default function Firewall() {
             <tbody className="divide-y divide-gray-700">
               {history.map((h) => (
                 <tr key={h.id}>
-                  <td className="px-6 py-3 text-xs">{h.created_at ? new Date(h.created_at).toLocaleString() : '—'}</td>
+                  <td className="px-6 py-3 text-xs">{formatDatetime(h.created_at)}</td>
                   <td className="px-6 py-3 font-mono text-blue-400">{h.ip_address}</td>
                   <td className="px-6 py-3">
                     <span className={h.action === 'block' ? 'text-red-400' : 'text-green-400'}>{h.action}</span>

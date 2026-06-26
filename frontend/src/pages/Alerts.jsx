@@ -4,10 +4,14 @@ import SeverityBadge from '../components/SeverityBadge'
 import AlertDetailModal from '../components/AlertDetailModal'
 import { fetchAlerts, resolveAlert, deleteAlert } from '../lib/api'
 import { hasRole } from '../lib/auth'
+import { formatDatetime } from '../lib/datetime'
+
+// Module-level cache
+let _alertsCache = []
 
 export default function Alerts() {
-  const [alerts, setAlerts] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [alerts, setAlerts] = useState(_alertsCache)
+  const [loading, setLoading] = useState(_alertsCache.length === 0)
   const [filter, setFilter] = useState({ severity: '', status: '', attackType: '' })
   const [selectedAlert, setSelectedAlert] = useState(null)
 
@@ -16,6 +20,7 @@ export default function Alerts() {
     try {
       const data = await fetchAlerts({ limit: 100, ...filter })
       setAlerts(data)
+      _alertsCache = data
     } catch (err) {
       console.error('Failed to fetch alerts:', err)
     }
@@ -173,7 +178,7 @@ export default function Alerts() {
                   <td className="px-4 py-3 text-gray-600 font-mono text-xs">{alert.dest_ip}</td>
                   <td className="px-4 py-3"><SeverityBadge severity={alert.severity} /></td>
                   <td className="px-4 py-3 text-gray-600">{((alert.confidence ?? 0) * 100).toFixed(1)}%</td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{alert.timestamp?.slice(0, 19).replace('T', ' ')}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">{formatDatetime(alert.timestamp)}</td>
                   <td className="px-4 py-3">
                     <span className={`text-xs font-medium ${alert.is_resolved ? 'text-green-600' : 'text-orange-600'}`}>
                       {alert.is_resolved ? 'Resolved' : 'Active'}

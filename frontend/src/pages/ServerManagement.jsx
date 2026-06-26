@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Server, PlusCircle, Edit, Trash2, RefreshCw, Cpu, HardDrive, ShieldCheck, WifiOff, Activity, LineChart as LineChartIcon } from 'lucide-react';
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { formatDatetime, formatChartTime } from '../lib/datetime';
 
 export default function ServerManagement() {
   const [servers, setServers] = useState([]);
@@ -148,7 +149,7 @@ export default function ServerManagement() {
                 FW: {server.firewall_status || 'N/A'}
               </div>
             </div>
-            <p className="text-gray-500 text-xs">Cập nhật cuối: {new Date(server.last_seen).toLocaleString()}</p>
+            <p className="text-gray-500 text-xs">Cập nhật cuối: {formatDatetime(server.last_seen)}</p>
 
             <div className="flex justify-end gap-2 mt-4">
               <button onClick={() => openEditModal(server)} className="text-yellow-500 hover:text-yellow-400 p-1 rounded-md">
@@ -306,9 +307,9 @@ export default function ServerManagement() {
                   <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={historyData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#4b5563" />
-                      <XAxis dataKey="timestamp" tickFormatter={(tick) => new Date(tick).toLocaleTimeString()} stroke="#9ca3af" />
+                      <XAxis dataKey="timestamp" tickFormatter={formatChartTime} stroke="#9ca3af" />
                       <YAxis domain={[0, 100]} unit="%" stroke="#9ca3af" />
-                      <Tooltip formatter={(value) => `${value.toFixed(1)}%`} labelFormatter={(label) => new Date(label).toLocaleString()} />
+                      <Tooltip formatter={(value) => `${value.toFixed(1)}%`} labelFormatter={formatDatetime} />
                       <Line type="monotone" dataKey="cpu_usage" stroke="#22d3ee" strokeWidth={2} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
@@ -322,9 +323,9 @@ export default function ServerManagement() {
                   <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={historyData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#4b5563" />
-                      <XAxis dataKey="timestamp" tickFormatter={(tick) => new Date(tick).toLocaleTimeString()} stroke="#9ca3af" />
+                      <XAxis dataKey="timestamp" tickFormatter={formatChartTime} stroke="#9ca3af" />
                       <YAxis domain={[0, 100]} unit="%" stroke="#9ca3af" />
-                      <Tooltip formatter={(value) => `${value.toFixed(1)}%`} labelFormatter={(label) => new Date(label).toLocaleString()} />
+                      <Tooltip formatter={(value) => `${value.toFixed(1)}%`} labelFormatter={formatDatetime} />
                       <Line type="monotone" dataKey="ram_usage" stroke="#a78bfa" strokeWidth={2} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
@@ -338,9 +339,9 @@ export default function ServerManagement() {
                   <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={historyData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#4b5563" />
-                      <XAxis dataKey="timestamp" tickFormatter={(tick) => new Date(tick).toLocaleTimeString()} stroke="#9ca3af" />
+                      <XAxis dataKey="timestamp" tickFormatter={formatChartTime} stroke="#9ca3af" />
                       <YAxis domain={[0, 100]} unit="%" stroke="#9ca3af" />
-                      <Tooltip formatter={(value) => `${value.toFixed(1)}%`} labelFormatter={(label) => new Date(label).toLocaleString()} />
+                      <Tooltip formatter={(value) => `${value.toFixed(1)}%`} labelFormatter={formatDatetime} />
                       <Line type="monotone" dataKey="disk_usage" stroke="#fb923c" strokeWidth={2} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>

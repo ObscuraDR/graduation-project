@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import api from '../lib/api';
 import { Users, PlusCircle, Edit, Trash2, UserCheck, Loader2, AlertCircle, CheckCircle2, KeyRound } from 'lucide-react';
 import { hasRole, getUser } from '../lib/auth';
+import { formatDatetime } from '../lib/datetime';
 
 const ROLES = ['admin', 'security_analyst', 'operator'];
 
@@ -173,7 +174,7 @@ export default function UserManagement() {
                       {user.role}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-xs">{user.created_at ? new Date(user.created_at).toLocaleString() : '—'}</td>
+                  <td className="px-6 py-4 text-xs">{formatDatetime(user.created_at)}</td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
                       <button

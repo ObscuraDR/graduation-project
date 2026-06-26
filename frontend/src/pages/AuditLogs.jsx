@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { History, Shield } from 'lucide-react'
 import { fetchAuditLogs } from '../lib/api'
+import { formatDatetime } from '../lib/datetime'
 
 const ACTION_LABELS = {
   login: 'Đăng nhập',
@@ -67,7 +68,7 @@ export default function AuditLogs() {
                 <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">Chưa có audit log</td></tr>
               ) : logs.map((log) => (
                 <tr key={log.id} className="hover:bg-gray-750">
-                  <td className="px-4 py-2 text-xs">{log.created_at ? new Date(log.created_at).toLocaleString() : '—'}</td>
+                  <td className="px-4 py-2 text-xs">{formatDatetime(log.created_at)}</td>
                   <td className="px-4 py-2 font-medium text-white">{log.username}</td>
                   <td className="px-4 py-2">
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-600/20 text-amber-300 text-xs">

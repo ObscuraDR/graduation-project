@@ -565,6 +565,8 @@ async def get_dashboard_stats(
     from collections import Counter, defaultdict
     from backend.database.models import Blacklist, Server
     from backend.api.routes.geoip import lookup_country
+    from backend.cache.redis_cache import get_cache
+    import asyncio
 
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
 
@@ -573,7 +575,14 @@ async def get_dashboard_stats(
     blocked_ips = db.query(Blacklist).filter(Blacklist.is_active == True).count()
     active_alerts = db.query(AttackAlert).filter(AttackAlert.status == "active").count()
 
-    recent = db.query(AttackAlert).filter(AttackAlert.timestamp >= since).all()
+    # Giới hạn 500 alerts gần nhất để tránh query quá lớn
+    recent = (
+        db.query(AttackAlert)
+        .filter(AttackAlert.timestamp >= since)
+        .order_by(AttackAlert.timestamp.desc())
+        .limit(500)
+        .all()
+    )
 
     trend_map: Dict[str, int] = defaultdict(int)
     ip_counts: Counter = Counter()
@@ -581,18 +590,42 @@ async def get_dashboard_stats(
     country_counts: Counter = Counter()
     country_cache: Dict[str, str] = {}
 
+    # Dùng in-memory cache cho GeoIP lookups để tránh gọi HTTP mỗi lần
+    cache = get_cache()
+
     for alert in recent:
         ts = alert.timestamp
         if ts:
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
             bucket = ts.replace(minute=0, second=0, microsecond=0).isoformat()
             trend_map[bucket] += 1
         ip_counts[alert.source_ip] += 1
         type_counts[alert.attack_type] += 1
+
         ip = alert.source_ip
-        if ip not in country_cache:
-            code = lookup_country(ip) if ip else None
-            country_cache[ip] = code or "Unknown"
-        country_counts[country_cache[ip]] += 1
+        if ip and ip not in country_cache:
+            # Kiểm tra cache trước
+            cache_key = f"geoip:{ip}"
+            cached_country = cache.get(cache_key)
+            if cached_country:
+                import json as _json
+                try:
+                    country_cache[ip] = _json.loads(cached_country)
+                except Exception:
+                    country_cache[ip] = cached_country
+            else:
+                # GeoIP lookup — chỉ lookup cho top IPs để tiết kiệm thời gian
+                if len(country_cache) < 50:
+                    code = lookup_country(ip)
+                    country = code or "Unknown"
+                    country_cache[ip] = country
+                    # Cache 1 giờ
+                    cache.set(cache_key, country, ttl=3600)
+                else:
+                    country_cache[ip] = "Unknown"
+
+        country_counts[country_cache.get(ip, "Unknown")] += 1
 
     attack_trend = sorted(
         [{"time": k, "count": v} for k, v in trend_map.items()],
