@@ -25,6 +25,22 @@ switch ($Action.ToLower()) {
         Invoke-RestMethod "$BASE/api/demo/start?delay_sec=0.2&rounds=3&unique_src=true" -Method POST | ConvertTo-Json
     }
 
+    "simulate" {
+        Write-Host "`n=== Simulating Attack ===" -ForegroundColor Red
+        $type = if ($args[0]) { $args[0] } else { "all" }
+        python backend/scripts/simulate_attack.py --type $type --delay 0.5
+    }
+
+    "simulate-ddos" {
+        Write-Host "`n=== Simulating DDoS Attack ===" -ForegroundColor Red
+        python backend/scripts/simulate_attack.py --type DDoS --count 2 --delay 0.3
+    }
+
+    "simulate-scan" {
+        Write-Host "`n=== Simulating Port Scan ===" -ForegroundColor Red
+        python backend/scripts/simulate_attack.py --type PortScan --delay 0.3
+    }
+
     "demo-stop" {
         Write-Host "`n=== Stopping Demo ===" -ForegroundColor Red
         Invoke-RestMethod "$BASE/api/demo/stop" -Method POST | ConvertTo-Json
@@ -96,9 +112,14 @@ Chay: .\demo.ps1 -Action <lenh>
   pipeline-stop    Dung pipeline
   pipeline-status  Trang thai pipeline
 
+  simulate         Gia lap tan cong (all / DDoS / PortScan / BruteForce)
+  simulate-ddos    Gia lap DDoS nhanh
+  simulate-scan    Gia lap Port Scan
+
 Vi du demo bao ve:
+  .\demo.ps1 -Action simulate-ddos
   .\demo.ps1 -Action demo-start
-  (Mo browser: http://localhost:3000 -> tab Overview)
+  (Mo browser: http://localhost:3000 -> tab Canh bao)
   .\demo.ps1 -Action demo-status
   .\demo.ps1 -Action alerts
 "@ -ForegroundColor White

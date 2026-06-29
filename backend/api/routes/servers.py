@@ -1,14 +1,112 @@
+import asyncio
+import logging
+from datetime import datetime, timezone
+from typing import List, Optional
+from collections import defaultdict
+
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
-from typing import List, Optional
 from pydantic import BaseModel, Field, ConfigDict
-from datetime import datetime
-import logging
 from backend.database.connection import get_db
-from backend.database.repository import ServerRepository
+from backend.database.repository import ServerRepository, ServerMetricHistoryRepository
 from backend.audit.logger import record_audit, get_client_ip
 from backend.api.dependencies import verify_api_key
 from backend.database.models import Server as DBServer
+
+router = APIRouter(prefix="/api/servers", tags=["servers"])
+logger = logging.getLogger(__name__)
+
+# ── Async log queue — nhận events từ nhiều agents, batch insert vào DB ────────
+_log_queue: asyncio.Queue = asyncio.Queue(maxsize=10_000)
+_log_worker_task: Optional[asyncio.Task] = None
+
+
+async def start_log_worker():
+    """Khởi động background worker xử lý log queue. Gọi từ lifespan."""
+    global _log_worker_task
+    if _log_worker_task is None or _log_worker_task.done():
+        _log_worker_task = asyncio.create_task(
+            _log_batch_worker(), name="server-log-batch-worker"
+        )
+        logger.info("Server log batch worker started")
+
+
+async def stop_log_worker():
+    """Dừng worker khi shutdown."""
+    global _log_worker_task
+    if _log_worker_task and not _log_worker_task.done():
+        _log_worker_task.cancel()
+        try:
+            await _log_worker_task
+        except asyncio.CancelledError:
+            pass
+
+
+async def _log_batch_worker(batch_size: int = 20, flush_interval: float = 5.0):
+    """
+    Background worker: gom events từ queue → batch INSERT vào DB.
+    Flush mỗi 5 giây hoặc khi đủ 20 events — tránh INSERT từng dòng.
+    """
+    from backend.database.security_log_store import store_security_log
+
+    logger.info("Log batch worker started (batch=%d, flush=%.1fs)", batch_size, flush_interval)
+    batch = []
+    last_flush = asyncio.get_event_loop().time()
+
+    while True:
+        try:
+            try:
+                item = await asyncio.wait_for(_log_queue.get(), timeout=1.0)
+                batch.append(item)
+                _log_queue.task_done()
+            except asyncio.TimeoutError:
+                pass
+
+            now = asyncio.get_event_loop().time()
+            should_flush = len(batch) >= batch_size or (
+                batch and now - last_flush >= flush_interval
+            )
+
+            if should_flush and batch:
+                for event in batch:
+                    try:
+                        store_security_log(
+                            server=event.get("server", "unknown"),
+                            source_ip=event.get("source_ip"),
+                            event_type=event.get("event_type", "generic"),
+                            message=event.get("message", ""),
+                            log_source=event.get("log_source", "agent"),
+                            extra={
+                                "server_id": event.get("server_id"),
+                                "count": event.get("count"),
+                                "severity": event.get("severity"),
+                            },
+                        )
+                    except Exception as e:
+                        logger.debug("Store log error: %s", e)
+
+                logger.debug("Flushed %d log events to DB", len(batch))
+                batch.clear()
+                last_flush = now
+
+        except asyncio.CancelledError:
+            for event in batch:
+                try:
+                    from backend.database.security_log_store import store_security_log
+                    store_security_log(
+                        server=event.get("server", "unknown"),
+                        source_ip=event.get("source_ip"),
+                        event_type=event.get("event_type", "generic"),
+                        message=event.get("message", ""),
+                        log_source=event.get("log_source", "agent"),
+                    )
+                except Exception:
+                    pass
+            logger.info("Log batch worker stopped")
+            break
+        except Exception as e:
+            logger.error("Log batch worker error: %s", e)
+            await asyncio.sleep(1)
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
 

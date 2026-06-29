@@ -1,18 +1,19 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import RequireAuth from './components/RequireAuth';
-import Sidebar from './components/Sidebar'; // Import Sidebar component
+import Sidebar from './components/Sidebar';
+import ToastContainer from './components/ToastNotification';
+import { connectWebSocket, onWebSocketMessage } from './lib/websocket';
 
-// Import các trang của bạn
 import Login from './pages/Login';
 import Overview from './pages/Overview';
 import Alerts from './pages/Alerts';
 import Firewall from './pages/Firewall';
 import ServerManagement from './pages/ServerManagement';
 import NotificationSettings from './pages/NotificationSettings';
-import ProfileSettings from './pages/ProfileSettings'; // Import ProfileSettings
-import GeoBlocking from './pages/GeoBlocking'; // Import GeoBlocking
-import UserManagement from './pages/UserManagement'; // Import UserManagement
+import ProfileSettings from './pages/ProfileSettings';
+import GeoBlocking from './pages/GeoBlocking';
+import UserManagement from './pages/UserManagement';
 import LogViewer from './pages/LogViewer';
 import AuditLogs from './pages/AuditLogs';
 import AIInsights from './pages/AIInsights';
@@ -22,19 +23,35 @@ import Register from './pages/Register';
 
 
 export default function App() {
+  const [liveAlerts, setLiveAlerts] = useState([])
+
+  // Kết nối WebSocket ở App level — toàn cục, không phụ thuộc trang
+  useEffect(() => {
+    connectWebSocket()
+    const unsub = onWebSocketMessage((msg) => {
+      if (msg.type === 'alert') {
+        setLiveAlerts((prev) => [msg.data, ...prev].slice(0, 50))
+      }
+    })
+    return () => unsub()
+  }, [])
+
   return (
     <BrowserRouter>
+      {/* Toast notifications — hiển thị ở mọi trang */}
+      <ToastContainer alerts={liveAlerts} />
+
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        
+
         {/* Protected Routes */}
-        <Route 
-          path="/*" 
+        <Route
+          path="/*"
           element={
             <RequireAuth>
               <div className="flex min-h-screen bg-gray-900 text-gray-200">
-                <Sidebar /> {/* Render Sidebar */}
+                <Sidebar />
                 <div className="flex-1 p-6">
                   <Routes>
                     <Route index element={<Overview />} />
@@ -42,9 +59,9 @@ export default function App() {
                     <Route path="firewall" element={<Firewall />} />
                     <Route path="servers" element={<ServerManagement />} />
                     <Route path="settings/notifications" element={<NotificationSettings />} />
-                    <Route path="settings/profile" element={<ProfileSettings />} /> {/* New Route */}
-                    <Route path="geo-blocking" element={<GeoBlocking />} /> {/* New Route for FR04 */}
-                    <Route path="settings/users" element={<UserManagement />} /> {/* New Route for FR01 */}
+                    <Route path="settings/profile" element={<ProfileSettings />} />
+                    <Route path="geo-blocking" element={<GeoBlocking />} />
+                    <Route path="settings/users" element={<UserManagement />} />
                     <Route path="ai-insights" element={<AIInsights />} />
                     <Route path="network" element={<Network />} />
                     <Route path="logs" element={<LogViewer />} />
@@ -54,7 +71,7 @@ export default function App() {
                 </div>
               </div>
             </RequireAuth>
-          } 
+          }
         />
       </Routes>
     </BrowserRouter>
