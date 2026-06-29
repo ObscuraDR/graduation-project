@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { RefreshCw, Activity } from 'lucide-react'
+import { RefreshCw, Activity, Play, Pause } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { fetchActiveFlows, fetchTopTalkers, fetchTrafficStats } from '../lib/api'
 
@@ -8,6 +8,8 @@ export default function Traffic() {
   const [topTalkers, setTopTalkers] = useState([])
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [refreshInterval, setRefreshInterval] = useState(5) // seconds
 
   const loadData = async () => {
     setLoading(true)
@@ -26,7 +28,20 @@ export default function Traffic() {
     setLoading(false)
   }
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  // Auto-refresh effect
+  useEffect(() => {
+    if (!autoRefresh) return
+
+    const interval = setInterval(() => {
+      loadData()
+    }, refreshInterval * 1000)
+
+    return () => clearInterval(interval)
+  }, [autoRefresh, refreshInterval])
 
   return (
     <div className="p-6 space-y-6">
@@ -35,9 +50,40 @@ export default function Traffic() {
           <h1 className="text-2xl font-bold text-gray-900">Traffic Analysis</h1>
           <p className="text-sm text-gray-500">Active flows and network statistics</p>
         </div>
-        <button onClick={loadData} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50">
-          <RefreshCw className="w-4 h-4" /> Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Auto-refresh toggle */}
+          <button
+            onClick={() => setAutoRefresh(!autoRefresh)}
+            className={`flex items-center gap-2 px-4 py-2 border rounded-lg text-sm ${
+              autoRefresh
+                ? 'bg-red-600 border-red-600 text-white hover:bg-red-500'
+                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+            } transition-colors`}
+          >
+            {autoRefresh ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            {autoRefresh ? 'Auto-refreshing' : 'Auto-refresh off'}
+          </button>
+
+          {/* Refresh interval selector */}
+          {autoRefresh && (
+            <select
+              value={refreshInterval}
+              onChange={(e) => setRefreshInterval(parseInt(e.target.value))}
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+            >
+              <option value={3}>3s</option>
+              <option value={5}>5s</option>
+              <option value={10}>10s</option>
+              <option value={30}>30s</option>
+            </select>
+          )}
+
+          {/* Manual refresh button */}
+          <button onClick={loadData} className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm text-white transition-colors">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Stats Summary */}

@@ -34,19 +34,19 @@ export default function NotificationSettings() {
     <div className="p-8 max-w-4xl mx-auto">
       <div className="flex items-center gap-3 mb-8">
         <Bell className="w-8 h-8 text-blue-500" />
-        <h1 className="text-2xl font-bold text-white">Cấu hình Thông báo</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Cấu hình Thông báo</h1>
       </div>
 
       {message && (
-        <div className="mb-6 p-4 bg-green-500/10 border border-green-500/50 rounded-lg text-green-400 flex items-center gap-2">
+        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 flex items-center gap-2">
           <CheckCircle className="w-5 h-5" /> {message}
         </div>
       )}
 
       <div className="space-y-6">
-        <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+        <div className="bg-white p-6 rounded-xl border border-gray-200">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
               <Send className="w-5 h-5 text-sky-400" /> Telegram Bot
             </h2>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -61,31 +61,31 @@ export default function NotificationSettings() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Bot Token</label>
+              <label className="block text-sm font-medium text-gray-600 mb-2">Bot Token</label>
               <input
                 type="password"
                 value={settings.telegram_bot_token}
                 onChange={(e) => setSettings({ ...settings, telegram_bot_token: e.target.value })}
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
                 placeholder="123456789:ABCDEF..."
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">Chat ID</label>
+              <label className="block text-sm font-medium text-gray-600 mb-2">Chat ID</label>
               <input
                 type="text"
                 value={settings.telegram_chat_id}
                 onChange={(e) => setSettings({ ...settings, telegram_chat_id: e.target.value })}
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
                 placeholder="-100123456789"
               />
             </div>
           </div>
         </div>
 
-        <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+        <div className="bg-white p-6 rounded-xl border border-gray-200">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
               <div className="w-5 h-5 bg-indigo-500 rounded-sm" /> Discord Webhook
             </h2>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -99,12 +99,12 @@ export default function NotificationSettings() {
             </label>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-2">Webhook URL</label>
+            <label className="block text-sm font-medium text-gray-600 mb-2">Webhook URL</label>
             <input
               type="password"
               value={settings.discord_webhook_url}
               onChange={(e) => setSettings({ ...settings, discord_webhook_url: e.target.value })}
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+              className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-indigo-500 outline-none"
               placeholder="https://discord.com/api/webhooks/..."
             />
           </div>

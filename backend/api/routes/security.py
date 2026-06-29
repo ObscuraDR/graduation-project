@@ -68,21 +68,34 @@ class GeoBlockAddRequest(BaseModel):
 # ──────────────────────────────────────────────
 
 @blacklist_router.get("/")
-async def list_blacklist(db: Session = Depends(get_db)):
+async def list_blacklist(
+    limit: int = Query(50, ge=1, le=500),
+    skip: int = Query(0, ge=0),
+    db: Session = Depends(get_db)
+):
+    """Get blacklist with pagination support."""
     entries = BlacklistRepository.get_all_active(db)
-    return [
-        {
-            "id": e.id,
-            "ip_address": e.ip_address,
-            "reason": e.reason,
-            "country_code": e.country_code,
-            "auto_blocked": e.auto_blocked,
-            "is_active": e.is_active,
-            "created_at": e.created_at.isoformat(),
-            "expires_at": e.expires_at.isoformat() if e.expires_at else None,
-        }
-        for e in entries
-    ]
+    total = len(entries)
+    paginated_entries = entries[skip:skip + limit]
+
+    return {
+        "items": [
+            {
+                "id": e.id,
+                "ip_address": e.ip_address,
+                "reason": e.reason,
+                "country_code": e.country_code,
+                "auto_blocked": e.auto_blocked,
+                "is_active": e.is_active,
+                "created_at": e.created_at.isoformat(),
+                "expires_at": e.expires_at.isoformat() if e.expires_at else None,
+            }
+            for e in paginated_entries
+        ],
+        "total": total,
+        "limit": limit,
+        "skip": skip
+    }
 
 
 @blacklist_router.post("/", status_code=status.HTTP_201_CREATED)
@@ -158,24 +171,34 @@ async def remove_from_blacklist(ip_address: str, request: Request, db: Session =
 
 @blacklist_router.get("/history")
 async def list_block_history(
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(50, ge=1, le=500),
+    skip: int = Query(0, ge=0),
     ip_address: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
+    """Get block history with pagination support."""
     rows = BlockHistoryRepository.list_entries(db, limit=limit, ip_address=ip_address)
-    return [
-        {
-            "id": r.id,
-            "ip_address": r.ip_address,
-            "action": r.action,
-            "reason": r.reason,
-            "duration_hours": r.duration_hours,
-            "performed_by": r.performed_by,
-            "auto_blocked": r.auto_blocked,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-        }
-        for r in rows
-    ]
+    total = len(rows)
+    paginated_rows = rows[skip:skip + limit]
+
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "ip_address": r.ip_address,
+                "action": r.action,
+                "reason": r.reason,
+                "duration_hours": r.duration_hours,
+                "performed_by": r.performed_by,
+                "auto_blocked": r.auto_blocked,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in paginated_rows
+        ],
+        "total": total,
+        "limit": limit,
+        "skip": skip
+    }
 
 
 # ──────────────────────────────────────────────

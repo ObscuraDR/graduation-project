@@ -17,6 +17,7 @@ Biến môi trường:
 """
 
 import asyncio
+import gzip
 import hashlib
 import hmac
 import json
@@ -56,6 +57,8 @@ SYN_CONN_THRESHOLD    = 100  # Số kết nối SYN cùng lúc → alert
 _ssh_fail_tracker: Dict[str, List[datetime]] = defaultdict(list)
 _log_last_pos: Dict[str, int] = {}  # file path → last read position
 _events_queue: List[Dict] = []      # batch queue chưa gửi
+_last_batch_send: float = 0.0       # timestamp lần gửi batch cuối
+_BATCH_SEND_INTERVAL = 30.0         # Gom batch mỗi 30 giây (Tier 2)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -120,6 +123,12 @@ def sign_payload(payload: dict, secret_key: str) -> str:
     payload_str = json.dumps(payload, sort_keys=True)
     mac = hmac.new(secret_key.encode("utf-8"), payload_str.encode("utf-8"), hashlib.sha256)
     return mac.hexdigest()
+
+
+def compress_payload(payload: dict) -> bytes:
+    """Compress JSON payload với gzip để giảm bandwidth (Tier 2)."""
+    json_str = json.dumps(payload)
+    return gzip.compress(json_str.encode("utf-8"))
 
 
 # ── Security Log Scanner (lọc tại nguồn) ─────────────────────────────────────
@@ -334,30 +343,66 @@ async def run_agent() -> None:
                         stats.get("ram_usage", 0)
                     )
 
+                    # Tier 2: Gom events vào batch queue thay vì gửi ngay
                     if events:
-                        payload = {
-                            "server_id": SERVER_ID,
-                            "events": events,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        }
-                        sig_log = sign_payload(payload, API_KEY)
-                        log_resp = await client.post(
-                            f"{API_URL}/{SERVER_ID}/logs",
-                            json=payload,
-                            headers={"X-API-Key": API_KEY, "X-Signature": sig_log},
+                        _events_queue.extend(events)
+                        logger.debug(
+                            "[%s] Added %d events to batch queue (total: %d)",
+                            time.strftime("%H:%M:%S"), len(events), len(_events_queue)
                         )
-                        log_resp.raise_for_status()
-                        logger.warning(
-                            "[%s] Security events sent: %d event(s)",
-                            time.strftime("%H:%M:%S"), len(events)
-                        )
-                        for ev in events:
-                            logger.warning("  → [%s] %s", ev["event_type"], ev["message"])
                     else:
                         logger.debug("[%s] Log scan: no anomalies", time.strftime("%H:%M:%S"))
 
                 except Exception as e:
-                    logger.error("Log scan/send error: %s", e)
+                    logger.error("Log scan error: %s", e)
+
+            # ── 3. Gửi batch events mỗi _BATCH_SEND_INTERVAL giây (Tier 2) ──
+            batch_elapsed = time.monotonic() - _last_batch_send
+            if _events_queue and batch_elapsed >= _BATCH_SEND_INTERVAL:
+                try:
+                    # Lấy batch tối đa 50 events để tránh payload quá lớn
+                    batch_to_send = _events_queue[:50]
+                    _events_queue = _events_queue[50:]
+
+                    payload = {
+                        "server_id": SERVER_ID,
+                        "events": batch_to_send,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                    sig_log = sign_payload(payload, API_KEY)
+
+                    # Tier 2: Gửi với gzip compression
+                    compressed_data = compress_payload(payload)
+                    log_resp = await client.post(
+                        f"{API_URL}/{SERVER_ID}/logs",
+                        content=compressed_data,
+                        headers={
+                            "X-API-Key": API_KEY,
+                            "X-Signature": sig_log,
+                            "Content-Encoding": "gzip",
+                            "Content-Type": "application/json",
+                        },
+                    )
+                    log_resp.raise_for_status()
+                    logger.warning(
+                        "[%s] Batch sent: %d events (compressed)",
+                        time.strftime("%H:%M:%S"), len(batch_to_send)
+                    )
+                    for ev in batch_to_send[:3]:  # Chỉ log 3 events đầu để tránh spam
+                        logger.warning("  → [%s] %s", ev["event_type"], ev["message"])
+                    if len(batch_to_send) > 3:
+                        logger.warning("  → ... and %d more", len(batch_to_send) - 3)
+
+                    _last_batch_send = time.monotonic()
+
+                except httpx.HTTPStatusError as e:
+                    logger.error("HTTP error sending batch: %s", e.response.text[:100])
+                    # Rollback: đưa lại vào queue để thử lại sau
+                    _events_queue = batch_to_send + _events_queue
+                except Exception as e:
+                    logger.error("Batch send error: %s", e)
+                    # Rollback: đưa lại vào queue
+                    _events_queue = batch_to_send + _events_queue
 
             # ── 3. Sleep đến lần gửi tiếp theo ─────────────────────────────
             elapsed = time.monotonic() - loop_start

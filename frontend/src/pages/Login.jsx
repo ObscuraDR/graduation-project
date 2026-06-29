@@ -25,9 +25,9 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
-      await loginRequest(username.trim(), password)
+      const loginResponse = await loginRequest(username.trim(), password)
       const user = await fetchMe()
-      setAuth(user)
+      setAuth(user, loginResponse.access_token || loginResponse.token)
       navigate(from, { replace: true })
     } catch (err) {
       if (err.response?.status === 403) {

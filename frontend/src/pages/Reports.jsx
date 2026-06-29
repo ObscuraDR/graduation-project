@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { FileText, Download, RefreshCw, Save } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { FileText, Download, RefreshCw, Save, ChevronDown } from 'lucide-react'
 import { fetchSecurityReport } from '../lib/api'
 import SeverityBadge from '../components/SeverityBadge'
 import { formatDatetime } from '../lib/datetime'
@@ -8,6 +8,7 @@ export default function Reports() {
   const [hours, setHours] = useState(24)
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [showExportDropdown, setShowExportDropdown] = useState(false)
 
   const loadReport = async (save = false) => {
     setLoading(true)
@@ -19,6 +20,22 @@ export default function Reports() {
     }
     setLoading(false)
   }
+
+  // Auto-generate when hours changes
+  useEffect(() => {
+    loadReport(false)
+  }, [hours])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showExportDropdown && !event.target.closest('.export-dropdown')) {
+        setShowExportDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showExportDropdown])
 
   const exportJSON = () => {
     if (!report) return
@@ -75,7 +92,7 @@ export default function Reports() {
         </div>
         <div className="flex gap-2">
           <select value={hours} onChange={(e) => setHours(Number(e.target.value))}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700">
             <option value={1}>Last 1 hour</option>
             <option value={6}>Last 6 hours</option>
             <option value={24}>Last 24 hours</option>
@@ -83,23 +100,46 @@ export default function Reports() {
             <option value={720}>Last 30 days</option>
           </select>
           <button onClick={() => loadReport(false)} disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Generate
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-500 disabled:opacity-50 transition-colors"
+            title="Refresh report">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           {report && (
             <>
               <button onClick={() => loadReport(true)} disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-sm rounded-lg hover:bg-gray-50">
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-500 disabled:opacity-50 transition-colors">
                 <Save className="w-4 h-4" /> Save
               </button>
-              <button onClick={exportCSV}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-sm rounded-lg hover:bg-gray-50">
-                <Download className="w-4 h-4" /> CSV
-              </button>
-              <button onClick={exportJSON}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-sm rounded-lg hover:bg-gray-50">
-                <Download className="w-4 h-4" /> JSON
-              </button>
+              <div className="relative export-dropdown">
+                <button
+                  onClick={() => setShowExportDropdown(!showExportDropdown)}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-500 disabled:opacity-50 transition-colors"
+                >
+                  <Download className="w-4 h-4" /> Export <ChevronDown className="w-4 h-4" />
+                </button>
+                {showExportDropdown && (
+                  <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                    <button
+                      onClick={() => {
+                        exportCSV()
+                        setShowExportDropdown(false)
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                    >
+                      <Download className="w-4 h-4 text-green-600" /> CSV
+                    </button>
+                    <button
+                      onClick={() => {
+                        exportJSON()
+                        setShowExportDropdown(false)
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                    >
+                      <Download className="w-4 h-4 text-purple-600" /> JSON
+                    </button>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>

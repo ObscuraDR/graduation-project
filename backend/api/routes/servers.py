@@ -44,14 +44,16 @@ async def stop_log_worker():
 
 async def _log_batch_worker(batch_size: int = 20, flush_interval: float = 5.0):
     """
-    Background worker: gom events từ queue → batch INSERT vào DB.
+    Background worker: gom events từ queue → batch INSERT vào DB + trigger AlertManager.
     Flush mỗi 5 giây hoặc khi đủ 20 events — tránh INSERT từng dòng.
     """
     from backend.database.security_log_store import store_security_log
+    from backend.alert_engine.alert_manager import get_alert_manager
 
     logger.info("Log batch worker started (batch=%d, flush=%.1fs)", batch_size, flush_interval)
     batch = []
     last_flush = asyncio.get_event_loop().time()
+    alert_mgr = get_alert_manager()
 
     while True:
         try:
@@ -70,6 +72,7 @@ async def _log_batch_worker(batch_size: int = 20, flush_interval: float = 5.0):
             if should_flush and batch:
                 for event in batch:
                     try:
+                        # Lưu log vào DB
                         store_security_log(
                             server=event.get("server", "unknown"),
                             source_ip=event.get("source_ip"),
@@ -82,10 +85,37 @@ async def _log_batch_worker(batch_size: int = 20, flush_interval: float = 5.0):
                                 "severity": event.get("severity"),
                             },
                         )
+
+                        # Trigger AlertManager cho các event nghiêm trọng
+                        event_type = event.get("event_type", "")
+                        source_ip = event.get("source_ip")
+                        severity = event.get("severity", "low")
+
+                        if source_ip and event_type in ["ssh_brute_force", "cpu_spike", "ram_spike", "syn_flood_inbound", "syn_flood_outbound"]:
+                            # Tạo prediction dict cho AlertManager
+                            prediction = {
+                                "attack_type": event_type,
+                                "confidence": 0.9 if severity == "critical" else (0.8 if severity == "high" else 0.7),
+                                "severity": severity,
+                            }
+                            flow_info = {
+                                "src_ip": source_ip,
+                                "dst_ip": event.get("server", "unknown"),
+                                "event_type": event_type,
+                                "count": event.get("count", 1),
+                            }
+
+                            # Gọi AlertManager để xử lý và auto-block nếu cần
+                            try:
+                                alert_mgr.generate_alert(prediction, flow_info)
+                                logger.debug("AlertManager triggered for %s from %s", event_type, source_ip)
+                            except Exception as e:
+                                logger.error("AlertManager error: %s", e)
+
                     except Exception as e:
                         logger.debug("Store log error: %s", e)
 
-                logger.debug("Flushed %d log events to DB", len(batch))
+                logger.debug("Flushed %d log events to DB with AlertManager processing", len(batch))
                 batch.clear()
                 last_flush = now
 
@@ -233,3 +263,57 @@ def get_server_history(server_id: int, limit: int = 100, db: Session = Depends(g
     """Lấy lịch sử chỉ số của một máy chủ."""
     from backend.database.repository import ServerMetricHistoryRepository # Moved to top-level import
     return ServerMetricHistoryRepository.get_history_for_server(db, server_id, limit)
+
+
+class AgentLogPayload(BaseModel):
+    """Payload khi agent gửi security events."""
+    server_id: int
+    events: List[Dict]
+    timestamp: str
+
+
+@router.post("/{server_id}/logs")
+async def receive_agent_logs(
+    server_id: int,
+    payload: AgentLogPayload,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Endpoint để agent gửi security events.
+    Nhận vào queue async → batch insert vào DB để tránh overload.
+    """
+    # Validate server_id matches payload
+    if payload.server_id != server_id:
+        raise HTTPException(status_code=400, detail="server_id mismatch")
+    
+    # Get server name for logging
+    from backend.database.repository import ServerRepository
+    from backend.database.connection import get_db
+    db_gen = get_db()
+    db = next(db_gen)
+    try:
+        server = ServerRepository.get_server_by_id(db, server_id)
+        server_name = server.name if server else f"server-{server_id}"
+    finally:
+        db.close()
+    
+    # Put events into async queue for batch processing
+    event_count = 0
+    for event in payload.events:
+        try:
+            await _log_queue.put({
+                "server": server_name,
+                "server_id": server_id,
+                "source_ip": event.get("source_ip"),
+                "event_type": event.get("event_type", "generic"),
+                "message": event.get("message", ""),
+                "log_source": event.get("log_source", "agent"),
+                "count": event.get("count"),
+                "severity": event.get("severity"),
+            })
+            event_count += 1
+        except Exception as e:
+            logger.error("Failed to queue event: %s", e)
+    
+    logger.debug("Queued %d security events from server %s", event_count, server_name)
+    return {"status": "accepted", "queued_events": event_count}

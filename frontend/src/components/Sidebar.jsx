@@ -23,10 +23,9 @@ export default function Sidebar() {
 
   const settingsItems = [
     { to: '/settings/profile', icon: User, label: 'Tài khoản' },
-    { to: '/audit', icon: History, label: 'Audit Log', roles: ['admin'] },
     { to: '/settings/notifications', icon: Bell, label: 'Thông báo' }, // FR09
     { to: '/geo-blocking', icon: Globe, label: 'Geo Blocking', roles: ['admin'] }, // FR04 - Dedicated page
-    { to: '/settings/users', icon: Users, label: 'Quản lý User', roles: ['admin'] }, // FR01
+    { to: '/settings/users', icon: Users, label: 'Quản lý User & Audit', roles: ['admin'] }, // FR01 - Combined with Audit Log
   ];
 
   return (

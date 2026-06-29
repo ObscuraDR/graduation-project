@@ -120,7 +120,7 @@ export default function UserManagement() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <Users className="w-8 h-8 text-blue-500" />
-          <h1 className="text-2xl font-bold text-white">Quản lý Người dùng</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Quản lý Người dùng</h1>
         </div>
         <button
           onClick={() => setShowAddModal(true)}
@@ -132,7 +132,7 @@ export default function UserManagement() {
 
       {message.text && (
         <div className={`mb-4 p-3 rounded-lg flex items-center gap-2 ${
-          message.type === 'success' ? 'bg-green-500/10 text-green-400 border border-green-500/30' : 'bg-red-500/10 text-red-400 border border-red-500/30'
+          message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
         }`}>
           {message.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
           {message.text}
@@ -147,9 +147,9 @@ export default function UserManagement() {
       )}
 
       {!loading && !error && users.length > 0 && (
-        <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
-          <table className="w-full text-left text-gray-300">
-            <thead className="bg-gray-900/50 text-gray-400 text-xs uppercase">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <table className="w-full text-left text-gray-700">
+            <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
               <tr>
                 <th className="px-6 py-4">ID</th>
                 <th className="px-6 py-4">Tên đăng nhập</th>
@@ -159,34 +159,34 @@ export default function UserManagement() {
                 <th className="px-6 py-4 text-right">Thao tác</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-700">
+            <tbody className="divide-y divide-gray-100">
               {users.map((user) => (
-                <tr key={user.id} className="hover:bg-gray-750">
-                  <td className="px-6 py-4 text-sm">{user.id}</td>
-                  <td className="px-6 py-4 font-medium text-white">{user.username}</td>
-                  <td className="px-6 py-4 text-sm">{user.email || 'N/A'}</td>
+                <tr key={user.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 text-sm text-gray-600">{user.id}</td>
+                  <td className="px-6 py-4 font-medium text-gray-800">{user.username}</td>
+                  <td className="px-6 py-4 text-sm text-gray-700">{user.email || 'N/A'}</td>
                   <td className="px-6 py-4">
                     <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize ${
-                      user.role === 'admin' ? 'bg-red-600/20 text-red-400' :
-                      user.role === 'security_analyst' ? 'bg-yellow-600/20 text-yellow-400' :
-                      'bg-blue-600/20 text-blue-400'
+                      user.role === 'admin' ? 'bg-red-100 text-red-700' :
+                      user.role === 'security_analyst' ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-blue-100 text-blue-700'
                     }`}>
                       {user.role}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-xs">{formatDatetime(user.created_at)}</td>
+                  <td className="px-6 py-4 text-xs text-gray-600">{formatDatetime(user.created_at)}</td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => openEditModal(user)}
-                        className="text-yellow-500 hover:text-yellow-400 p-1 rounded-md"
+                        className="text-yellow-600 hover:text-yellow-700 p-1 rounded-md"
                         title="Chỉnh sửa vai trò"
                       >
                         <Edit className="w-5 h-5" />
                       </button>
                       <button
                         onClick={() => handleResetPassword(user.id, user.username)}
-                        className="text-blue-500 hover:text-blue-400 p-1 rounded-md"
+                        className="text-blue-600 hover:text-blue-700 p-1 rounded-md"
                         title="Đặt lại mật khẩu"
                         disabled={user.id === currentUser.id} // Không cho phép reset mật khẩu của chính mình
                       >
@@ -194,7 +194,7 @@ export default function UserManagement() {
                       </button>
                       <button
                         onClick={() => handleDeleteUser(user.id, user.username)}
-                        className="text-red-500 hover:text-red-400 p-1 rounded-md"
+                        className="text-red-600 hover:text-red-700 p-1 rounded-md"
                         title="Xóa người dùng"
                         disabled={user.id === currentUser.id} // Không cho phép xóa chính mình
                       >
@@ -211,56 +211,56 @@ export default function UserManagement() {
 
       {/* Add User Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700 w-full max-w-md">
-            <h2 className="text-xl font-bold text-white mb-6">Thêm Người dùng Mới</h2>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-200 w-full max-w-md">
+            <h2 className="text-xl font-bold text-gray-800 mb-6">Thêm Người dùng Mới</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Tên đăng nhập</label>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Tên đăng nhập</label>
                 <input
                   type="text"
                   value={newUserData.username}
                   onChange={(e) => setNewUserData({ ...newUserData, username: e.target.value })}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="username"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Email</label>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Email</label>
                 <input
                   type="email"
                   value={newUserData.email}
                   onChange={(e) => setNewUserData({ ...newUserData, email: e.target.value })}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="user@example.com"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Mật khẩu</label>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Mật khẩu</label>
                 <input
                   type="password"
                   value={newUserData.password}
                   onChange={(e) => setNewUserData({ ...newUserData, password: e.target.value })}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="••••••••"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Vai trò</label>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Vai trò</label>
                 <select
                   value={newUserData.role}
                   onChange={(e) => setNewUserData({ ...newUserData, role: e.target.value })}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
                 >
                   {ROLES.map(role => <option key={role} value={role}>{role.replace('_', ' ').toUpperCase()}</option>)}
                 </select>
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setShowAddModal(false)} className="px-4 py-2 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors">Hủy</button>
+              <button onClick={() => setShowAddModal(false)} className="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">Hủy</button>
               <button onClick={handleAddUser} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white font-medium transition-colors">Thêm</button>
             </div>
           </div>
@@ -269,23 +269,23 @@ export default function UserManagement() {
 
       {/* Edit Role Modal */}
       {showEditModal && currentUserToEdit && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700 w-full max-w-md">
-            <h2 className="text-xl font-bold text-white mb-6">Chỉnh sửa Vai trò: {currentUserToEdit.username}</h2>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-200 w-full max-w-md">
+            <h2 className="text-xl font-bold text-gray-800 mb-6">Chỉnh sửa Vai trò: {currentUserToEdit.username}</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Vai trò</label>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Vai trò</label>
                 <select
                   value={editRoleData.role}
                   onChange={(e) => setEditRoleData({ ...editRoleData, role: e.target.value })}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
                 >
                   {ROLES.map(role => <option key={role} value={role}>{role.replace('_', ' ').toUpperCase()}</option>)}
                 </select>
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setShowEditModal(false)} className="px-4 py-2 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors">Hủy</button>
+              <button onClick={() => setShowEditModal(false)} className="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">Hủy</button>
               <button onClick={handleEditRole} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white font-medium transition-colors">Cập nhật</button>
             </div>
           </div>
@@ -294,17 +294,17 @@ export default function UserManagement() {
 
       {/* Reset Password Result Modal */}
       {showResetPasswordModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700 w-full max-w-md text-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-200 w-full max-w-md text-center">
             <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-white mb-3">Mật khẩu đã được đặt lại!</h2>
-            <p className="text-gray-300 mb-4">
-              Mật khẩu mới cho người dùng <span className="font-semibold text-blue-400">{resetPasswordResult.username}</span> là:
+            <h2 className="text-xl font-bold text-gray-800 mb-3">Mật khẩu đã được đặt lại!</h2>
+            <p className="text-gray-600 mb-4">
+              Mật khẩu mới cho người dùng <span className="font-semibold text-blue-600">{resetPasswordResult.username}</span> là:
             </p>
-            <div className="bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 mb-6">
-              <p className="font-mono text-lg text-green-400 break-all">{resetPasswordResult.newPassword}</p>
+            <div className="bg-gray-100 border border-gray-300 rounded-lg px-4 py-3 mb-6">
+              <p className="font-mono text-lg text-green-700 break-all">{resetPasswordResult.newPassword}</p>
             </div>
-            <p className="text-sm text-red-400 mb-6">
+            <p className="text-sm text-red-600 mb-6">
               Vui lòng sao chép mật khẩu này ngay lập tức. Nó sẽ không được hiển thị lại.
             </p>
             <button onClick={() => setShowResetPasswordModal(false)} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white font-medium transition-colors">Đóng</button>

@@ -416,7 +416,7 @@ export default function AIInsights() {
           <button
             onClick={runExplanation}
             disabled={xaiLoading}
-            className="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50"
+            className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-500 disabled:opacity-50 transition-colors"
           >
             {xaiLoading ? 'Analyzing...' : 'Run Explanation'}
           </button>

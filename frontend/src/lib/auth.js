@@ -9,9 +9,10 @@
  * tránh circular dependency (api.js → auth.js → api.js).
  */
 const USER_KEY = 'ids_user'
+const TOKEN_KEY = 'ids_token'
 
 export function getToken() {
-  return ''
+  return localStorage.getItem(TOKEN_KEY) || ''
 }
 
 export function getUser() {
@@ -23,14 +24,18 @@ export function getUser() {
   }
 }
 
-export function setAuth(user) {
+export function setAuth(user, token) {
   if (user) {
     localStorage.setItem(USER_KEY, JSON.stringify(user))
+  }
+  if (token) {
+    localStorage.setItem(TOKEN_KEY, token)
   }
 }
 
 export function clearAuth() {
   localStorage.removeItem(USER_KEY)
+  localStorage.removeItem(TOKEN_KEY)
 }
 
 export function isAuthenticated() {

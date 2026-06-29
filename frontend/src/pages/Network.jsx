@@ -84,7 +84,7 @@ export default function Network() {
         </div>
         <button
           onClick={loadData}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50"
+          className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm text-white transition-colors"
         >
           <Activity className="w-4 h-4" /> Refresh
         </button>
@@ -261,7 +261,7 @@ export default function Network() {
             <select
               value={filterProto}
               onChange={(e) => setFilterProto(e.target.value)}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white"
+              className="px-3 py-1.5 border border-blue-500 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All Protocols</option>
               <option value="tcp">TCP</option>

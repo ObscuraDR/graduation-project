@@ -187,10 +187,10 @@ class AttackAlertRepository:
         attack_type: Optional[str] = None,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None
-    ) -> List[AttackAlert]:
-        """Get alerts with optional filtering"""
+    ) -> Dict[str, Any]:
+        """Get alerts with optional filtering and pagination"""
         query = db.query(AttackAlert)
-        
+
         if severity:
             query = query.filter(AttackAlert.severity == severity)
         if status:
@@ -201,8 +201,16 @@ class AttackAlertRepository:
             query = query.filter(AttackAlert.timestamp >= start_time)
         if end_time:
             query = query.filter(AttackAlert.timestamp <= end_time)
-        
-        return query.order_by(AttackAlert.timestamp.desc()).offset(skip).limit(limit).all()
+
+        total = query.count()
+        alerts = query.order_by(AttackAlert.timestamp.desc()).offset(skip).limit(limit).all()
+
+        return {
+            "items": alerts,
+            "total": total,
+            "limit": limit,
+            "skip": skip
+        }
     
     @staticmethod
     def update_alert_status(db: Session, alert_id: str, status: str, notes: Optional[str] = None) -> Optional[AttackAlert]:
@@ -666,13 +674,22 @@ class AuditLogRepository:
         skip: int = 0,
         action: Optional[str] = None,
         username: Optional[str] = None,
-    ) -> List[AuditLog]:
+    ) -> Dict[str, Any]:
         q = db.query(AuditLog)
         if action:
             q = q.filter(AuditLog.action == action)
         if username:
             q = q.filter(AuditLog.username == username)
-        return q.order_by(AuditLog.created_at.desc()).offset(skip).limit(limit).all()
+
+        total = q.count()
+        entries = q.order_by(AuditLog.created_at.desc()).offset(skip).limit(limit).all()
+
+        return {
+            "items": entries,
+            "total": total,
+            "limit": limit,
+            "skip": skip
+        }
 
 
 class BlockHistoryRepository:

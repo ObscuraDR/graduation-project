@@ -13,9 +13,8 @@ import ServerManagement from './pages/ServerManagement';
 import NotificationSettings from './pages/NotificationSettings';
 import ProfileSettings from './pages/ProfileSettings';
 import GeoBlocking from './pages/GeoBlocking';
-import UserManagement from './pages/UserManagement';
+import UserManagementAndAudit from './pages/UserManagementAndAudit';
 import LogViewer from './pages/LogViewer';
-import AuditLogs from './pages/AuditLogs';
 import AIInsights from './pages/AIInsights';
 import Network from './pages/Network';
 import Reports from './pages/Reports';
@@ -61,11 +60,10 @@ export default function App() {
                     <Route path="settings/notifications" element={<NotificationSettings />} />
                     <Route path="settings/profile" element={<ProfileSettings />} />
                     <Route path="geo-blocking" element={<GeoBlocking />} />
-                    <Route path="settings/users" element={<UserManagement />} />
+                    <Route path="settings/users" element={<UserManagementAndAudit />} />
                     <Route path="ai-insights" element={<AIInsights />} />
                     <Route path="network" element={<Network />} />
                     <Route path="logs" element={<LogViewer />} />
-                    <Route path="audit" element={<AuditLogs />} />
                     <Route path="reports" element={<Reports />} />
                   </Routes>
                 </div>

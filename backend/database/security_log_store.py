@@ -5,11 +5,14 @@ Centralized security log storage (PostgreSQL with JSONB).
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional
 from sqlalchemy import or_, desc
 
 logger = logging.getLogger(__name__)
+
+# Tier 4: TTL configuration - auto-delete logs older than 7 days
+LOG_TTL_DAYS = 7
 
 def store_security_log(
     *,
@@ -45,6 +48,33 @@ def store_security_log(
             db.close()
     except Exception as exc:
         logger.debug("Security log store skipped: %s", exc)
+
+
+def cleanup_old_logs(ttl_days: int = LOG_TTL_DAYS) -> int:
+    """
+    Tier 4: Auto-delete security logs older than TTL days.
+    Gọi định kỳ để tránh bảng phình to.
+    Returns: số lượng log đã xóa.
+    """
+    try:
+        from backend.database.connection import SessionLocal
+        from backend.database.models import SecurityLog
+
+        db = SessionLocal()
+        try:
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=ttl_days)
+            deleted = db.query(SecurityLog).filter(
+                SecurityLog.timestamp < cutoff_date
+            ).delete()
+            db.commit()
+            if deleted > 0:
+                logger.info("Cleaned up %d old security logs (older than %d days)", deleted, ttl_days)
+            return deleted
+        finally:
+            db.close()
+    except Exception as exc:
+        logger.warning("Log cleanup failed: %s", exc)
+        return 0
 
 
 def query_security_logs(

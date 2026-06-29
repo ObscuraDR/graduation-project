@@ -1,5 +1,5 @@
 ﻿﻿import { useEffect, useState } from 'react'
-import { Play, Square, Key, Wifi, RefreshCw, Shield, Globe, Ban, Terminal } from 'lucide-react'
+import { Play, Square, Key, Wifi, RefreshCw, Shield, Globe, Ban, Terminal, Plus } from 'lucide-react'
 import {
   fetchSnifferStatus, startSniffer, stopSniffer, fetchHealthDetailed,
   fetchWhitelist, addWhitelist, removeWhitelist, fetchInterfaces,
@@ -7,6 +7,7 @@ import {
   fetchGeoBlocks, addGeoBlock, removeGeoBlock,
 } from '../lib/api'
 import { formatDatetime } from '../lib/datetime'
+import BlockIPModal from '../components/BlockIPModal'
 
 const TABS = ['Pipeline', 'Whitelist', 'Blacklist', 'Geo Block']
 
@@ -38,9 +39,7 @@ export default function Settings() {
 
   // Blacklist
   const [blacklist, setBlacklist] = useState([])
-  const [newBlIp, setNewBlIp] = useState('')
-  const [newBlReason, setNewBlReason] = useState('')
-  const [newBlHours, setNewBlHours] = useState('')
+  const [showBlockIPModal, setShowBlockIPModal] = useState(false)
 
   // Geo-block
   const [geoRules, setGeoRules] = useState([])
@@ -113,17 +112,12 @@ export default function Settings() {
   }
 
   // â”€â”€ Blacklist handlers â”€â”€
-  const handleAddBlacklist = async () => {
-    if (!newBlIp) return
+  const handleAddBlacklist = async (data) => {
     try {
-      await addBlacklist({
-        ip_address: newBlIp,
-        reason: newBlReason || undefined,
-        expires_hours: newBlHours ? parseInt(newBlHours) : undefined,
-      })
-      setNewBlIp(''); setNewBlReason(''); setNewBlHours('')
+      await addBlacklist(data)
       fetchBlacklist().then(setBlacklist)
-      flash('success', `${newBlIp} added to blacklist`)
+      flash('success', `${data.ip_address} added to blacklist`)
+      setShowBlockIPModal(false)
     } catch (err) { flash('error', err.response?.data?.detail || err.message) }
   }
   const handleRemoveBlacklist = async (ip) => {
@@ -177,7 +171,7 @@ export default function Settings() {
             <div className="flex gap-3">
               <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
                 placeholder="Enter X-API-Key" className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-              <button onClick={handleSaveApiKey} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">Save</button>
+              <button onClick={handleSaveApiKey} className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-500 transition-colors">Save</button>
             </div>
           </div>
 
@@ -206,7 +200,7 @@ export default function Settings() {
               <div className="flex items-center gap-2">
                 {healthCheckedAt && <span className="text-xs text-gray-400">Last: {healthCheckedAt}</span>}
                 <button onClick={loadHealth} disabled={healthLoading}
-                  className="flex items-center gap-1 px-2 py-1 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-red-600 text-white border border-red-600 rounded-lg hover:bg-red-500 disabled:opacity-50 transition-colors">
                   <RefreshCw className={`w-3 h-3 ${healthLoading ? 'animate-spin' : ''}`} /> Refresh
                 </button>
               </div>
@@ -301,14 +295,13 @@ export default function Settings() {
           <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
             <Ban className="w-4 h-4 text-red-600" /> IP Blacklist
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-            <input value={newBlIp} onChange={(e) => setNewBlIp(e.target.value)}
-              placeholder="IP address *" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-            <input value={newBlReason} onChange={(e) => setNewBlReason(e.target.value)}
-              placeholder="Reason (optional)" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-            <input type="number" value={newBlHours} onChange={(e) => setNewBlHours(e.target.value)}
-              placeholder="Expires (hours, blank=permanent)" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-            <button onClick={handleAddBlacklist} className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700">Block IP</button>
+          <div className="mb-4">
+            <button
+              onClick={() => setShowBlockIPModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-500 transition-colors"
+            >
+              <Plus className="w-4 h-4" /> Block IP
+            </button>
           </div>
           {blacklist.length > 0 ? (
             <div className="overflow-x-auto">
@@ -373,7 +366,7 @@ export default function Settings() {
                 className="w-36 px-3 py-2 border border-gray-200 rounded-lg text-sm uppercase" />
               <input value={newCountryName} onChange={(e) => setNewCountryName(e.target.value)}
                 placeholder="Country name (optional)" className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-              <button onClick={() => handleAddGeoBlock()} className="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700">Block Country</button>
+              <button onClick={() => handleAddGeoBlock()} className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-500 transition-colors">Block Country</button>
             </div>
           </div>
 
@@ -393,6 +386,13 @@ export default function Settings() {
           </div>
         </div>
       )}
+      
+      {/* Block IP Modal */}
+      <BlockIPModal
+        isOpen={showBlockIPModal}
+        onClose={() => setShowBlockIPModal(false)}
+        onBlock={handleAddBlacklist}
+      />
     </div>
   )
 }

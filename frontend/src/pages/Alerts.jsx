@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, CheckCircle, Trash2, RefreshCw, Eye, Download, Activity, Zap } from 'lucide-react'
 import SeverityBadge from '../components/SeverityBadge'
 import AlertDetailModal from '../components/AlertDetailModal'
+import Pagination from '../components/Pagination'
 import { fetchAlerts, resolveAlert, deleteAlert } from '../lib/api'
 import { hasRole } from '../lib/auth'
 import { formatDatetime } from '../lib/datetime'
@@ -25,13 +26,17 @@ export default function Alerts() {
   const [selectedAlert, setSelectedAlert] = useState(null)
   const [liveAlerts, setLiveAlerts] = useState([])
   const [liveCount, setLiveCount] = useState(0)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const [totalPages, setTotalPages] = useState(1)
 
   const loadAlerts = async () => {
     setLoading(true)
     try {
-      const data = await fetchAlerts({ limit: 100, ...filter })
-      setAlerts(data)
-      _alertsCache = data
+      const data = await fetchAlerts({ limit: pageSize, skip: (currentPage - 1) * pageSize, ...filter })
+      setAlerts(data.items || data)
+      setTotalPages(Math.ceil((data.total || data.length) / pageSize))
+      _alertsCache = data.items || data
     } catch (err) {
       console.error('Failed to fetch alerts:', err)
     }
@@ -40,7 +45,7 @@ export default function Alerts() {
 
   useEffect(() => {
     loadAlerts()
-  }, [filter])
+  }, [filter, currentPage, pageSize])
 
   // WebSocket cho Live Feed
   useEffect(() => {
@@ -104,11 +109,11 @@ export default function Alerts() {
         </div>
         <div className="flex gap-2">
           <button onClick={exportCSV} disabled={alerts.length === 0}
-            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-40">
+            className="flex items-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
             <Download className="w-4 h-4" /> Export CSV
           </button>
           <button onClick={loadAlerts}
-            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:bg-gray-50">
+            className="flex items-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm text-white transition-colors">
             <RefreshCw className="w-4 h-4" /> Làm mới
           </button>
         </div>
@@ -123,7 +128,7 @@ export default function Alerts() {
           <div className="flex gap-2 mb-3 flex-wrap">
             <select value={filter.attackType}
               onChange={(e) => setFilter((f) => ({ ...f, attackType: e.target.value }))}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+              className="px-3 py-1.5 border border-red-600 rounded-lg text-sm bg-red-600 text-white hover:bg-red-500 transition-colors">
               <option value="">Tất cả loại tấn công</option>
               <option value="DDoS">DDoS</option>
               <option value="PortScan">PortScan</option>
@@ -133,7 +138,7 @@ export default function Alerts() {
             </select>
             <select value={filter.severity}
               onChange={(e) => setFilter((f) => ({ ...f, severity: e.target.value }))}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+              className="px-3 py-1.5 border border-red-600 rounded-lg text-sm bg-red-600 text-white hover:bg-red-500 transition-colors">
               <option value="">Tất cả mức độ</option>
               <option value="critical">Critical</option>
               <option value="high">High</option>
@@ -142,7 +147,7 @@ export default function Alerts() {
             </select>
             <select value={filter.status}
               onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+              className="px-3 py-1.5 border border-red-600 rounded-lg text-sm bg-red-600 text-white hover:bg-red-500 transition-colors">
               <option value="">Tất cả trạng thái</option>
               <option value="active">Đang hoạt động</option>
               <option value="resolved">Đã xử lý</option>
@@ -166,59 +171,71 @@ export default function Alerts() {
                 </div>
               </div>
             ) : (
-              <div className="overflow-auto flex-1">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
-                    <tr>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Loại tấn công</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Source IP</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Mức độ</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Confidence</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Thời gian</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Trạng thái</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {alerts.map((alert) => (
-                      <tr key={alert.alert_id}
-                        className="hover:bg-gray-50 cursor-pointer transition-colors"
-                        onClick={() => setSelectedAlert(alert)}>
-                        <td className="px-4 py-3 font-medium text-gray-800">{alert.attack_type}</td>
-                        <td className="px-4 py-3 text-gray-500 font-mono text-xs">{alert.source_ip}</td>
-                        <td className="px-4 py-3"><SeverityBadge severity={alert.severity} /></td>
-                        <td className="px-4 py-3 text-gray-500">{((alert.confidence ?? 0) * 100).toFixed(1)}%</td>
-                        <td className="px-4 py-3 text-gray-400 text-xs">{formatDatetime(alert.timestamp)}</td>
-                        <td className="px-4 py-3">
-                          <span className={`text-xs font-medium ${alert.is_resolved ? 'text-green-600' : 'text-orange-500'}`}>
-                            {alert.is_resolved ? '✓ Đã xử lý' : '● Đang hoạt động'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-1">
-                            <button onClick={(e) => { e.stopPropagation(); setSelectedAlert(alert) }}
-                              className="p-1.5 text-blue-400 hover:bg-blue-50 rounded" title="Xem chi tiết">
-                              <Eye className="w-4 h-4" />
-                            </button>
-                            {!alert.is_resolved && hasRole(['admin', 'security_analyst']) && (
-                              <button onClick={(e) => handleResolve(alert.alert_id, e)}
-                                className="p-1.5 text-green-500 hover:bg-green-50 rounded" title="Đánh dấu đã xử lý">
-                                <CheckCircle className="w-4 h-4" />
-                              </button>
-                            )}
-                            {hasRole(['admin']) && (
-                              <button onClick={(e) => handleDelete(alert.alert_id, e)}
-                                className="p-1.5 text-red-400 hover:bg-red-50 rounded" title="Xóa">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
+              <>
+                <div className="overflow-auto flex-1">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
+                      <tr>
+                        <th className="text-left px-4 py-3 font-medium text-gray-600">Loại tấn công</th>
+                        <th className="text-left px-4 py-3 font-medium text-gray-600">Source IP</th>
+                        <th className="text-left px-4 py-3 font-medium text-gray-600">Mức độ</th>
+                        <th className="text-left px-4 py-3 font-medium text-gray-600">Confidence</th>
+                        <th className="text-left px-4 py-3 font-medium text-gray-600">Thời gian</th>
+                        <th className="text-left px-4 py-3 font-medium text-gray-600">Trạng thái</th>
+                        <th className="text-left px-4 py-3 font-medium text-gray-600">Thao tác</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {alerts.map((alert) => (
+                        <tr key={alert.alert_id}
+                          className="hover:bg-gray-50 cursor-pointer transition-colors"
+                          onClick={() => setSelectedAlert(alert)}>
+                          <td className="px-4 py-3 font-medium text-gray-800">{alert.attack_type}</td>
+                          <td className="px-4 py-3 text-gray-500 font-mono text-xs">{alert.source_ip}</td>
+                          <td className="px-4 py-3"><SeverityBadge severity={alert.severity} /></td>
+                          <td className="px-4 py-3 text-gray-500">{((alert.confidence ?? 0) * 100).toFixed(1)}%</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">{formatDatetime(alert.timestamp)}</td>
+                          <td className="px-4 py-3">
+                            <span className={`text-xs font-medium ${alert.is_resolved ? 'text-green-600' : 'text-orange-500'}`}>
+                              {alert.is_resolved ? '✓ Đã xử lý' : '● Đang hoạt động'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-1">
+                              <button onClick={(e) => { e.stopPropagation(); setSelectedAlert(alert) }}
+                                className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded" title="Xem chi tiết">
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              {!alert.is_resolved && hasRole(['admin', 'security_analyst']) && (
+                                <button onClick={(e) => handleResolve(alert.alert_id, e)}
+                                  className="p-1.5 bg-green-50 text-green-600 hover:bg-green-100 rounded" title="Đánh dấu đã xử lý">
+                                  <CheckCircle className="w-4 h-4" />
+                                </button>
+                              )}
+                              {hasRole(['admin']) && (
+                                <button onClick={(e) => handleDelete(alert.alert_id, e)}
+                                  className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded" title="Xóa">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                  pageSize={pageSize}
+                  onPageSizeChange={(newSize) => {
+                    setPageSize(newSize)
+                    setCurrentPage(1)
+                  }}
+                />
+              </>
             )}
           </div>
         </div>

@@ -131,16 +131,16 @@ def _whitelist_entry_to_dict(item: Whitelist) -> Dict[str, Any]:
 
 # ==================== AttackAlert Routes ====================
 
-@alerts_router.get("/", response_model=List[Dict[str, Any]])
+@alerts_router.get("/")
 async def get_alerts(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 50,
     severity: Optional[str] = None,
     alert_status: Optional[str] = Query(None, alias="status"),
     attack_type: Optional[str] = Query(None, alias="attackType"),
     db: Session = Depends(get_db),
 ):
-    """Get all alerts with optional filtering"""
+    """Get all alerts with optional filtering and pagination"""
     query = db.query(AttackAlert)
 
     if severity:
@@ -150,29 +150,35 @@ async def get_alerts(
     if attack_type:
         query = query.filter(AttackAlert.attack_type == attack_type)
 
+    total = query.count()
     alerts = query.order_by(AttackAlert.timestamp.desc()).offset(skip).limit(limit).all()
 
-    return [
-        {
-            "id": alert.id,
-            "alert_id": alert.alert_id,
-            "source_ip": alert.source_ip,
-            "dest_ip": alert.dest_ip,
-            "source_port": alert.source_port,
-            "dest_port": alert.dest_port,
-            "attack_type": alert.attack_type,
-            "severity": alert.severity,
-            "confidence": float(alert.confidence),
-            "timestamp": alert.timestamp.isoformat(),
-            "status": alert.status,
-            "is_resolved": alert.is_resolved,
-            "resolved_at": alert.resolved_at.isoformat() if alert.resolved_at else None,
-            "notes": alert.notes,
-            "model_name": alert.model_name,
-            "model_version": alert.model_version,
-        }
-        for alert in alerts
-    ]
+    return {
+        "items": [
+            {
+                "id": alert.id,
+                "alert_id": alert.alert_id,
+                "source_ip": alert.source_ip,
+                "dest_ip": alert.dest_ip,
+                "source_port": alert.source_port,
+                "dest_port": alert.dest_port,
+                "attack_type": alert.attack_type,
+                "severity": alert.severity,
+                "confidence": float(alert.confidence),
+                "timestamp": alert.timestamp.isoformat(),
+                "status": alert.status,
+                "is_resolved": alert.is_resolved,
+                "resolved_at": alert.resolved_at.isoformat() if alert.resolved_at else None,
+                "notes": alert.notes,
+                "model_name": alert.model_name,
+                "model_version": alert.model_version,
+            }
+            for alert in alerts
+        ],
+        "total": total,
+        "limit": limit,
+        "skip": skip
+    }
 
 
 @alerts_router.get("/{alert_id}", response_model=Dict[str, Any])
