@@ -166,7 +166,7 @@ export default function UserManagementAndAudit() {
       <div className="p-6 text-center text-red-500">
         <AlertCircle className="w-12 h-12 mx-auto mb-3" />
         <p className="text-xl font-semibold">Truy cập bị từ chối</p>
-        <p className="text-gray-400">Bạn không có quyền xem trang này.</p>
+        <p className="text-slate-500">Bạn không có quyền xem trang này.</p>
       </div>
     );
   }
@@ -182,7 +182,7 @@ export default function UserManagementAndAudit() {
             className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
               activeTab === id
                 ? 'border-blue-500 text-blue-600 bg-blue-50'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-800/30'
             }`}
           >
             <Icon className="w-4 h-4" />
@@ -197,7 +197,7 @@ export default function UserManagementAndAudit() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Users className="w-8 h-8 text-blue-500" />
-              <h1 className="text-2xl font-bold text-gray-900">Quản lý Người dùng</h1>
+              <h1 className="text-2xl font-bold text-slate-100">Quản lý Người dùng</h1>
             </div>
             <button
               onClick={() => setShowAddModal(true)}
@@ -216,18 +216,18 @@ export default function UserManagementAndAudit() {
             </div>
           )}
 
-          {usersLoading && <p className="text-gray-400">Đang tải danh sách người dùng...</p>}
+          {usersLoading && <p className="text-slate-400">Đang tải danh sách người dùng...</p>}
           {usersError && <p className="text-red-500">{usersError}</p>}
 
           {!usersLoading && !usersError && users.length === 0 && (
-            <p className="text-gray-400">Chưa có người dùng nào.</p>
+            <p className="text-slate-500">Chưa có người dùng nào.</p>
           )}
 
           {!usersLoading && !usersError && users.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden flex-1 flex flex-col" style={{ maxHeight: 'calc(100vh - 300px)' }}>
+            <div className="bg-slate-900/60 backdrop-blur-sm rounded-xl border border-slate-800/60 overflow-hidden flex-1 flex flex-col" style={{ maxHeight: 'calc(100vh - 300px)' }}>
               <div className="overflow-auto flex-1">
                 <table className="w-full text-left text-gray-700">
-                  <thead className="bg-gray-50 text-gray-600 text-xs uppercase sticky top-0">
+                  <thead className="bg-slate-800/80 text-slate-400 text-xs uppercase sticky top-0">
                     <tr>
                       <th className="px-6 py-4">ID</th>
                       <th className="px-6 py-4">Tên đăng nhập</th>
@@ -237,22 +237,22 @@ export default function UserManagementAndAudit() {
                       <th className="px-6 py-4 text-right">Thao tác</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-slate-800/60">
                   {users.map((user) => (
-                    <tr key={user.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm text-gray-600">{user.id}</td>
-                      <td className="px-6 py-4 font-medium text-gray-800">{user.username}</td>
-                      <td className="px-6 py-4 text-sm text-gray-700">{user.email || 'N/A'}</td>
+                    <tr key={user.id} className="hover:bg-slate-800/40">
+                      <td className="px-6 py-4 text-sm text-slate-400">{user.id}</td>
+                      <td className="px-6 py-4 font-medium text-slate-100">{user.username}</td>
+                      <td className="px-6 py-4 text-sm text-slate-300">{user.email || 'N/A'}</td>
                       <td className="px-6 py-4">
                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize ${
-                          user.role === 'admin' ? 'bg-red-100 text-red-700' :
-                          user.role === 'security_analyst' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-blue-100 text-blue-700'
+                          user.role === 'admin' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                          user.role === 'security_analyst' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+                          'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                         }`}>
                           {user.role}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-xs text-gray-600">{formatDatetime(user.created_at)}</td>
+                      <td className="px-6 py-4 text-xs text-slate-400">{formatDatetime(user.created_at)}</td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end gap-2">
                           <button
@@ -291,55 +291,55 @@ export default function UserManagementAndAudit() {
           {/* Add User Modal */}
           {showAddModal && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-200 w-full max-w-md">
-                <h2 className="text-xl font-bold text-gray-800 mb-6">Thêm Người dùng Mới</h2>
+              <div className="bg-slate-900/60 backdrop-blur-sm p-8 rounded-xl shadow-2xl border border-slate-800/60 w-full max-w-md">
+                <h2 className="text-xl font-bold text-slate-100 mb-6">Thêm Người dùng Mới</h2>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-600 mb-1">Tên đăng nhập</label>
+                    <label className="block text-sm font-medium text-slate-500 mb-1">Tên đăng nhập</label>
                     <input
                       type="text"
                       value={newUserData.username}
                       onChange={(e) => setNewUserData({ ...newUserData, username: e.target.value })}
-                      className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
                       placeholder="username"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-600 mb-1">Email</label>
+                    <label className="block text-sm font-medium text-slate-500 mb-1">Email</label>
                     <input
                       type="email"
                       value={newUserData.email}
                       onChange={(e) => setNewUserData({ ...newUserData, email: e.target.value })}
-                      className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
                       placeholder="user@example.com"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-600 mb-1">Mật khẩu</label>
+                    <label className="block text-sm font-medium text-slate-500 mb-1">Mật khẩu</label>
                     <input
                       type="password"
                       value={newUserData.password}
                       onChange={(e) => setNewUserData({ ...newUserData, password: e.target.value })}
-                      className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
                       placeholder="••••••••"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-600 mb-1">Vai trò</label>
+                    <label className="block text-sm font-medium text-slate-500 mb-1">Vai trò</label>
                     <select
                       value={newUserData.role}
                       onChange={(e) => setNewUserData({ ...newUserData, role: e.target.value })}
-                      className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
                     >
                       {ROLES.map(role => <option key={role} value={role}>{role.replace('_', ' ').toUpperCase()}</option>)}
                     </select>
                   </div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
-                  <button onClick={() => setShowAddModal(false)} className="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">Hủy</button>
+                  <button onClick={() => setShowAddModal(false)} className="px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-800/30 transition-colors">Hủy</button>
                   <button onClick={handleAddUser} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white font-medium transition-colors">Thêm</button>
                 </div>
               </div>
@@ -349,22 +349,22 @@ export default function UserManagementAndAudit() {
           {/* Edit Role Modal */}
           {showEditModal && currentUserToEdit && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-200 w-full max-w-md">
-                <h2 className="text-xl font-bold text-gray-800 mb-6">Chỉnh sửa Vai trò: {currentUserToEdit.username}</h2>
+              <div className="bg-slate-900/60 backdrop-blur-sm p-8 rounded-xl shadow-2xl border border-slate-800/60 w-full max-w-md">
+                <h2 className="text-xl font-bold text-slate-100 mb-6">Chỉnh sửa Vai trò: {currentUserToEdit.username}</h2>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-600 mb-1">Vai trò</label>
+                    <label className="block text-sm font-medium text-slate-500 mb-1">Vai trò</label>
                     <select
                       value={editRoleData.role}
                       onChange={(e) => setEditRoleData({ ...editRoleData, role: e.target.value })}
-                      className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
                     >
                       {ROLES.map(role => <option key={role} value={role}>{role.replace('_', ' ').toUpperCase()}</option>)}
                     </select>
                   </div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
-                  <button onClick={() => setShowEditModal(false)} className="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors">Hủy</button>
+                  <button onClick={() => setShowEditModal(false)} className="px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-800/30 transition-colors">Hủy</button>
                   <button onClick={handleEditRole} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white font-medium transition-colors">Cập nhật</button>
                 </div>
               </div>
@@ -374,13 +374,13 @@ export default function UserManagementAndAudit() {
           {/* Reset Password Result Modal */}
           {showResetPasswordModal && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-200 w-full max-w-md text-center">
+              <div className="bg-slate-900/60 backdrop-blur-sm p-8 rounded-xl shadow-2xl border border-slate-800/60 w-full max-w-md text-center">
                 <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                <h2 className="text-xl font-bold text-gray-800 mb-3">Mật khẩu đã được đặt lại!</h2>
-                <p className="text-gray-600 mb-4">
+                <h2 className="text-xl font-bold text-slate-100 mb-3">Mật khẩu đã được đặt lại!</h2>
+                <p className="text-slate-400 mb-4">
                   Mật khẩu mới cho người dùng <span className="font-semibold text-blue-600">{resetPasswordResult.username}</span> là:
                 </p>
-                <div className="bg-gray-100 border border-gray-300 rounded-lg px-4 py-3 mb-6">
+                <div className="bg-slate-800/80 border border-slate-700 rounded-lg px-4 py-3 mb-6">
                   <p className="font-mono text-lg text-green-700 break-all">{resetPasswordResult.newPassword}</p>
                 </div>
                 <p className="text-sm text-red-600 mb-6">
@@ -400,14 +400,14 @@ export default function UserManagementAndAudit() {
             <div className="flex items-center gap-3">
               <History className="w-8 h-8 text-amber-500" />
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Audit Log</h1>
-                <p className="text-sm text-gray-500">Lịch sử thao tác người dùng</p>
+                <h1 className="text-2xl font-bold text-slate-100">Audit Log</h1>
+                <p className="text-sm text-slate-400">Lịch sử thao tác người dùng</p>
               </div>
             </div>
             <select
               value={actionFilter}
               onChange={(e) => setActionFilter(e.target.value)}
-              className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700"
+              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"
             >
               <option value="">Tất cả hành động</option>
               {Object.entries(ACTION_LABELS).map(([k, v]) => (
@@ -416,14 +416,14 @@ export default function UserManagementAndAudit() {
             </select>
           </div>
 
-          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden flex-1 flex flex-col" style={{ maxHeight: 'calc(100vh - 300px)' }}>
+          <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-800/60 rounded-xl overflow-hidden flex-1 flex flex-col" style={{ maxHeight: 'calc(100vh - 300px)' }}>
             {logsLoading ? (
               <p className="p-6 text-gray-400">Đang tải...</p>
             ) : (
               <>
                 <div className="overflow-auto flex-1">
                   <table className="w-full text-left text-sm text-gray-700">
-                    <thead className="bg-gray-50 text-xs uppercase text-gray-600 sticky top-0">
+                    <thead className="bg-slate-800/80 text-xs uppercase text-slate-400 sticky top-0">
                       <tr>
                         <th className="px-4 py-3">Thời gian</th>
                         <th className="px-4 py-3">User</th>
@@ -433,26 +433,26 @@ export default function UserManagementAndAudit() {
                         <th className="px-4 py-3">IP</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-slate-800/60">
                     {logs.length === 0 ? (
                       <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">Chưa có audit log</td></tr>
                     ) : logs.map((log) => (
-                      <tr key={log.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 text-xs text-gray-600">{formatDatetime(log.created_at)}</td>
-                        <td className="px-4 py-2 font-medium text-gray-800">{log.username}</td>
+                      <tr key={log.id} className="hover:bg-slate-800/40">
+                        <td className="px-4 py-2 text-xs text-slate-400">{formatDatetime(log.created_at)}</td>
+                        <td className="px-4 py-2 font-medium text-slate-100">{log.username}</td>
                         <td className="px-4 py-2">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-100 text-amber-700 text-xs">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs">
                             <Shield className="w-3 h-3" />
                             {ACTION_LABELS[log.action] || log.action}
                           </span>
                         </td>
-                        <td className="px-4 py-2 text-xs text-gray-500">
+                        <td className="px-4 py-2 text-xs text-slate-500">
                           {log.resource_type ? `${log.resource_type}${log.resource_id ? ` #${log.resource_id}` : ''}` : '—'}
                         </td>
-                        <td className="px-4 py-2 text-[10px] font-mono text-gray-500 max-w-[200px] truncate">
+                        <td className="px-4 py-2 text-[10px] font-mono text-slate-500 max-w-[200px] truncate">
                           {log.details ? JSON.stringify(log.details) : '—'}
                         </td>
-                        <td className="px-4 py-2 font-mono text-xs text-gray-600">{log.client_ip || '—'}</td>
+                        <td className="px-4 py-2 font-mono text-xs text-slate-400">{log.client_ip || '—'}</td>
                       </tr>
                     ))}
                   </tbody>

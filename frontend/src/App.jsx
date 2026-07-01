@@ -49,7 +49,7 @@ export default function App() {
           path="/*"
           element={
             <RequireAuth>
-              <div className="flex min-h-screen bg-gray-900 text-gray-200">
+              <div className="flex min-h-screen bg-slate-950 text-slate-200">
                 <Sidebar />
                 <div className="flex-1 p-6">
                   <Routes>

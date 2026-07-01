@@ -30,23 +30,33 @@ export default function NotificationSettings() {
     }
   };
 
+  const inputClass = "w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 placeholder-slate-600 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+  const labelClass = "block text-sm font-medium text-slate-400 mb-2"
+
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <div className="flex items-center gap-3 mb-8">
-        <Bell className="w-8 h-8 text-blue-500" />
-        <h1 className="text-2xl font-bold text-gray-900">Cấu hình Thông báo</h1>
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20">
+          <Bell className="w-6 h-6 text-blue-400" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-100">Cấu hình Thông báo</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Telegram Bot & Discord Webhook</p>
+        </div>
       </div>
 
       {message && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 flex items-center gap-2">
-          <CheckCircle className="w-5 h-5" /> {message}
+        <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 flex items-center gap-2">
+          <CheckCircle className="w-5 h-5 flex-shrink-0" /> {message}
         </div>
       )}
 
-      <div className="space-y-6">
-        <div className="bg-white p-6 rounded-xl border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+      <div className="space-y-4">
+        {/* Telegram */}
+        <div className="bg-slate-900/60 backdrop-blur-sm p-6 rounded-xl border border-slate-800/60">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-base font-semibold text-slate-200 flex items-center gap-2">
               <Send className="w-5 h-5 text-sky-400" /> Telegram Bot
             </h2>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -56,37 +66,38 @@ export default function NotificationSettings() {
                 onChange={(e) => setSettings({ ...settings, telegram_enabled: e.target.checked })}
                 className="sr-only peer"
               />
-              <div className="w-11 h-6 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
+              <div className="w-11 h-6 bg-slate-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
             </label>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-2">Bot Token</label>
+              <label className={labelClass}>Bot Token</label>
               <input
                 type="password"
                 value={settings.telegram_bot_token}
                 onChange={(e) => setSettings({ ...settings, telegram_bot_token: e.target.value })}
-                className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                className={inputClass}
                 placeholder="123456789:ABCDEF..."
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-2">Chat ID</label>
+              <label className={labelClass}>Chat ID</label>
               <input
                 type="text"
                 value={settings.telegram_chat_id}
                 onChange={(e) => setSettings({ ...settings, telegram_chat_id: e.target.value })}
-                className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                className={inputClass}
                 placeholder="-100123456789"
               />
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-              <div className="w-5 h-5 bg-indigo-500 rounded-sm" /> Discord Webhook
+        {/* Discord */}
+        <div className="bg-slate-900/60 backdrop-blur-sm p-6 rounded-xl border border-slate-800/60">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-base font-semibold text-slate-200 flex items-center gap-2">
+              <div className="w-5 h-5 bg-indigo-500 rounded-sm flex-shrink-0" /> Discord Webhook
             </h2>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
@@ -95,16 +106,16 @@ export default function NotificationSettings() {
                 onChange={(e) => setSettings({ ...settings, discord_enabled: e.target.checked })}
                 className="sr-only peer"
               />
-              <div className="w-11 h-6 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600" />
+              <div className="w-11 h-6 bg-slate-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600" />
             </label>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-2">Webhook URL</label>
+            <label className={labelClass}>Webhook URL</label>
             <input
               type="password"
               value={settings.discord_webhook_url}
               onChange={(e) => setSettings({ ...settings, discord_webhook_url: e.target.value })}
-              className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+              className={inputClass.replace('focus:ring-blue-500', 'focus:ring-indigo-500')}
               placeholder="https://discord.com/api/webhooks/..."
             />
           </div>
@@ -114,7 +125,7 @@ export default function NotificationSettings() {
           onClick={handleSave}
           disabled={loading}
           type="button"
-          className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+          className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-60 shadow-lg shadow-blue-500/20"
         >
           <Save className="w-5 h-5" />
           {loading ? 'Đang lưu...' : 'Lưu Cấu Hình'}

@@ -126,6 +126,22 @@ export async function deleteAlert(alertId) {
   return res.data
 }
 
+// ─── Agents (Cảm biến) ───────────────────────────────────────────────────────
+export async function fetchAgents() {
+  const res = await api.get('/agents')
+  return res.data
+}
+
+export async function addAgent(data) {
+  const res = await api.post('/agents/register', data)
+  return res.data
+}
+
+export async function deleteAgent(agentId) {
+  const res = await api.delete(`/agents/${agentId}`)
+  return res.data
+}
+
 // ─── Stats ───────────────────────────────────────────────────────────────────
 export async function fetchAlertEngineStats() {
   const res = await api.get('/stats/alert-engine')

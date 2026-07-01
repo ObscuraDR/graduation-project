@@ -25,6 +25,7 @@ import logging
 import os
 import platform
 import re
+import subprocess
 import time
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
@@ -59,6 +60,9 @@ _log_last_pos: Dict[str, int] = {}  # file path → last read position
 _events_queue: List[Dict] = []      # batch queue chưa gửi
 _last_batch_send: float = 0.0       # timestamp lần gửi batch cuối
 _BATCH_SEND_INTERVAL = 30.0         # Gom batch mỗi 30 giây (Tier 2)
+_command_queue: List[Dict] = []     # queue lệnh firewall từ trung tâm
+_last_command_fetch: float = 0.0    # timestamp lần fetch lệnh cuối
+_COMMAND_FETCH_INTERVAL = 5.0       # Fetch lệnh mỗi 5 giây
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -129,6 +133,97 @@ def compress_payload(payload: dict) -> bytes:
     """Compress JSON payload với gzip để giảm bandwidth (Tier 2)."""
     json_str = json.dumps(payload)
     return gzip.compress(json_str.encode("utf-8"))
+
+
+# ── Local Firewall Execution ─────────────────────────────────────────────────────
+
+def block_ip_local(ip: str, reason: str = "Remote command") -> bool:
+    """Chặn IP tại local firewall (iptables/netsh)."""
+    try:
+        if platform.system() == "Linux":
+            # Check if already blocked
+            check = subprocess.run(
+                ["iptables", "-C", "INPUT", "-s", ip, "-j", "DROP"],
+                capture_output=True, text=True
+            )
+            if check.returncode == 0:
+                logger.info(f"IP {ip} already blocked locally")
+                return True
+            
+            # Block with comment
+            result = subprocess.run(
+                ["iptables", "-A", "INPUT", "-s", ip, "-j", "DROP",
+                 "-m", "comment", "--comment", f"Z-Sentinel: {reason}"],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                logger.info(f"Blocked {ip} locally: {reason}")
+                return True
+            else:
+                logger.error(f"Failed to block {ip}: {result.stderr}")
+                return False
+                
+        elif platform.system() == "Windows":
+            rule_name = f"Z-Sentinel-Block-{ip}"
+            # Check if rule exists
+            check = subprocess.run(
+                ["netsh", "advfirewall", "firewall", "show", "rule", f"name={rule_name}"],
+                capture_output=True, text=True
+            )
+            if check.returncode == 0:
+                logger.info(f"IP {ip} already blocked locally")
+                return True
+            
+            # Add rule
+            result = subprocess.run(
+                ["netsh", "advfirewall", "firewall", "add", "rule",
+                 f"name={rule_name}", "dir=in", "action=block", f"remoteip={ip}",
+                 f"description=Z-Sentinel Remote Block: {reason}"],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                logger.info(f"Blocked {ip} locally: {reason}")
+                return True
+            else:
+                logger.error(f"Failed to block {ip}: {result.stderr}")
+                return False
+        return False
+    except Exception as e:
+        logger.error(f"Error blocking IP locally: {e}")
+        return False
+
+
+def unblock_ip_local(ip: str) -> bool:
+    """Gỡ chặn IP tại local firewall."""
+    try:
+        if platform.system() == "Linux":
+            result = subprocess.run(
+                ["iptables", "-D", "INPUT", "-s", ip, "-j", "DROP"],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                logger.info(f"Unblocked {ip} locally")
+                return True
+            else:
+                logger.error(f"Failed to unblock {ip}: {result.stderr}")
+                return False
+                
+        elif platform.system() == "Windows":
+            rule_name = f"Z-Sentinel-Block-{ip}"
+            result = subprocess.run(
+                ["netsh", "advfirewall", "firewall", "delete", "rule", f"name={rule_name}"],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                logger.info(f"Unblocked {ip} locally")
+                return True
+            else:
+                logger.error(f"Failed to unblock {ip}: {result.stderr}")
+                return False
+        return False
+    except Exception as e:
+        logger.error(f"Error unblocking IP locally: {e}")
+        return False
 
 
 # ── Security Log Scanner (lọc tại nguồn) ─────────────────────────────────────
@@ -291,6 +386,68 @@ def collect_security_events(cpu: float, ram: float) -> List[Dict]:
     return events
 
 
+# ── Command Fetching from Central Server ─────────────────────────────────────────
+
+async def fetch_firewall_commands(client: httpx.AsyncClient) -> List[Dict]:
+    """Fetch pending firewall commands from central server."""
+    try:
+        resp = await client.get(
+            f"{API_URL}/{SERVER_ID}/commands",
+            headers={"X-API-Key": API_KEY},
+            timeout=5.0
+        )
+        if resp.status_code == 200:
+            commands = resp.json()
+            return commands.get("commands", [])
+        else:
+            logger.debug("No pending commands or error fetching")
+            return []
+    except httpx.HTTPStatusError as e:
+        logger.error("HTTP error fetching commands: %s", e.response.status_code)
+        return []
+    except httpx.RequestError as e:
+        logger.error("Connection error fetching commands: %s", e)
+        return []
+    except Exception as e:
+        logger.error("Error fetching commands: %s", e)
+        return []
+
+
+async def execute_firewall_command(command: Dict) -> bool:
+    """Execute a firewall command from central server."""
+    action = command.get("action")
+    ip = command.get("ip")
+    reason = command.get("reason", "Remote command")
+    
+    if action == "block":
+        return block_ip_local(ip, reason)
+    elif action == "unblock":
+        return unblock_ip_local(ip)
+    else:
+        logger.warning(f"Unknown command action: {action}")
+        return False
+
+
+async def process_pending_commands(client: httpx.AsyncClient) -> None:
+    """Fetch and execute pending firewall commands."""
+    commands = await fetch_firewall_commands(client)
+    if not commands:
+        return
+    
+    logger.info(f"Received {len(commands)} firewall commands from central server")
+    executed = 0
+    for cmd in commands:
+        try:
+            if await execute_firewall_command(cmd):
+                executed += 1
+                logger.info(f"Executed command: {cmd.get('action')} {cmd.get('ip')}")
+        except Exception as e:
+            logger.error(f"Error executing command {cmd}: {e}")
+    
+    if executed > 0:
+        logger.info(f"Successfully executed {executed}/{len(commands)} commands")
+
+
 # ── Main Agent Loop ───────────────────────────────────────────────────────────
 
 async def run_agent() -> None:
@@ -299,6 +456,7 @@ async def run_agent() -> None:
     logger.info("Server ID     : %s", SERVER_ID)
     logger.info("Metrics URL   : %s/%s/status", API_URL, SERVER_ID)
     logger.info("Logs URL      : %s/%s/logs", API_URL, SERVER_ID)
+    logger.info("Commands URL : %s/%s/commands", API_URL, SERVER_ID)
     logger.info("Metric interval: %ss | Log interval: %ss", INTERVAL, LOG_INTERVAL)
     logger.info("=" * 55)
 
@@ -404,7 +562,16 @@ async def run_agent() -> None:
                     # Rollback: đưa lại vào queue
                     _events_queue = batch_to_send + _events_queue
 
-            # ── 3. Sleep đến lần gửi tiếp theo ─────────────────────────────
+            # ── 4. Fetch và thực hiện lệnh firewall từ trung tâm ─────────────
+            command_elapsed = time.monotonic() - _last_command_fetch
+            if command_elapsed >= _COMMAND_FETCH_INTERVAL:
+                _last_command_fetch = time.monotonic()
+                try:
+                    await process_pending_commands(client)
+                except Exception as e:
+                    logger.error("Error processing firewall commands: %s", e)
+
+            # ── 5. Sleep đến lần gửi tiếp theo ─────────────────────────────
             elapsed = time.monotonic() - loop_start
             sleep_time = max(0, INTERVAL - elapsed)
             await asyncio.sleep(sleep_time)

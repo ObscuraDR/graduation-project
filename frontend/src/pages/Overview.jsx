@@ -50,63 +50,76 @@ export default function Overview() {
 
   // KPI cards
   const kpis = [
-    { title: 'Máy chủ', value: dashboard?.total_servers ?? '—', sub: 'đang quản lý', icon: Server, color: '#3b82f6', bg: 'bg-blue-50' },
-    { title: 'Tổng cảnh báo', value: dashboard?.total_alerts ?? 0, sub: `${dashboard?.active_alerts ?? 0} đang hoạt động`, icon: AlertTriangle, color: '#ef4444', bg: 'bg-red-50' },
-    { title: 'IP bị chặn', value: dashboard?.blocked_ips ?? 0, sub: 'đang chặn', icon: Ban, color: '#f59e0b', bg: 'bg-yellow-50' },
-    { title: 'Mối đe dọa', value: dashboard?.active_threats ?? 0, sub: 'cần xử lý', icon: Shield, color: '#8b5cf6', bg: 'bg-purple-50' },
+    { title: 'Máy chủ', value: dashboard?.total_servers ?? '—', sub: 'đang quản lý', icon: Server, color: 'blue' },
+    { title: 'Tổng cảnh báo', value: dashboard?.total_alerts ?? 0, sub: `${dashboard?.active_alerts ?? 0} đang hoạt động`, icon: AlertTriangle, color: 'red' },
+    { title: 'IP bị chặn', value: dashboard?.blocked_ips ?? 0, sub: 'đang chặn', icon: Ban, color: 'amber' },
+    { title: 'Mối đe dọa', value: dashboard?.active_threats ?? 0, sub: 'cần xử lý', icon: Shield, color: 'purple' },
   ]
+
+  const iconColorMap = {
+    blue: { bg: 'bg-blue-500/10 border-blue-500/20', icon: 'text-blue-400', value: 'text-blue-400' },
+    red: { bg: 'bg-red-500/10 border-red-500/20', icon: 'text-red-400', value: 'text-red-400' },
+    amber: { bg: 'bg-amber-500/10 border-amber-500/20', icon: 'text-amber-400', value: 'text-amber-400' },
+    purple: { bg: 'bg-violet-500/10 border-violet-500/20', icon: 'text-violet-400', value: 'text-violet-400' },
+  }
 
   // Pie data từ threat_categories
   const pieData = (dashboard?.threat_categories ?? []).map((t) => ({ name: t.type, value: t.count }))
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="space-y-5">
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Tổng quan hệ thống</h1>
-          <p className="text-sm text-gray-400">Z-Sentinel IDS — Real-time Monitoring</p>
+          <h1 className="text-2xl font-bold text-slate-100">Tổng quan hệ thống</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Z-Sentinel IDS — Real-time Monitoring</p>
         </div>
         <div className="flex items-center gap-2">
-          {isRefreshing && <span className="text-xs text-gray-400 animate-pulse">Đang tải...</span>}
-          <span className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-100 rounded-full">
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-xs text-green-700 font-medium">Hệ thống hoạt động</span>
+          {isRefreshing && <span className="text-xs text-slate-500 animate-pulse">Đang tải...</span>}
+          <span className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-xs text-emerald-400 font-medium">Hệ thống hoạt động</span>
           </span>
         </div>
       </div>
 
       {/* ── ROW 1: KPI Cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map(({ title, value, sub, icon: Icon, color, bg }) => (
-          <div key={title} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl ${bg} shrink-0`}>
-              <Icon className="w-5 h-5" style={{ color }} />
+        {kpis.map(({ title, value, sub, icon: Icon, color }) => {
+          const c = iconColorMap[color] || iconColorMap.blue
+          return (
+            <div key={title} className="bg-slate-900/60 backdrop-blur-sm rounded-xl border border-slate-800/60 p-5 hover:border-slate-700/60 transition-all duration-200">
+              <div className="flex items-center justify-between mb-3">
+                <div className={`p-2.5 rounded-xl border ${c.bg}`}>
+                  <Icon className={`w-5 h-5 ${c.icon}`} />
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">{title}</p>
+              <p className={`text-3xl font-bold mt-1 ${c.value}`}>{value}</p>
+              <p className="text-xs text-slate-600 mt-1">{sub}</p>
             </div>
-            <div className="min-w-0">
-              <p className="text-xs text-gray-500 truncate">{title}</p>
-              <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-              <p className="text-xs text-gray-400">{sub}</p>
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* ── ROW 2: Attack Trend + Threat Pie ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Attack Trend — chiếm 2/3 */}
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+        <div className="lg:col-span-2 bg-slate-900/60 backdrop-blur-sm rounded-xl border border-slate-800/60 p-5">
+          <h3 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
             <Activity className="w-4 h-4 text-red-400" /> Xu hướng tấn công (24h)
           </h3>
           {(dashboard?.attack_trend?.length ?? 0) > 0 ? (
             <ResponsiveContainer width="100%" height={180}>
               <LineChart data={dashboard.attack_trend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
-                <XAxis dataKey="time" tick={{ fontSize: 10 }} tickFormatter={formatChartHour} />
-                <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-                <Tooltip labelFormatter={formatChartHour} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={formatChartHour} />
+                <YAxis tick={{ fontSize: 10, fill: '#64748b' }} allowDecimals={false} />
+                <Tooltip
+                  labelFormatter={formatChartHour}
+                  contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' }}
+                />
                 <Line
                   type="monotone" dataKey="count" stroke="#ef4444"
                   strokeWidth={2} dot={false} name="Cảnh báo"
@@ -114,7 +127,7 @@ export default function Overview() {
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-[180px] flex flex-col items-center justify-center text-gray-300 gap-2">
+            <div className="h-[180px] flex flex-col items-center justify-center text-slate-600 gap-2">
               <Activity className="w-8 h-8" />
               <span className="text-sm">Chưa có dữ liệu tấn công</span>
             </div>
@@ -122,9 +135,9 @@ export default function Overview() {
         </div>
 
         {/* Threat Categories Pie — chiếm 1/3 */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-            <Zap className="w-4 h-4 text-purple-400" /> Loại tấn công
+        <div className="bg-slate-900/60 backdrop-blur-sm rounded-xl border border-slate-800/60 p-5">
+          <h3 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
+            <Zap className="w-4 h-4 text-violet-400" /> Loại tấn công
           </h3>
           {pieData.length > 0 ? (
             <>
@@ -135,23 +148,23 @@ export default function Overview() {
                       <Cell key={i} fill={SEVERITY_COLORS[entry.name] || SEVERITY_COLORS.default} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' }} />
                 </PieChart>
               </ResponsiveContainer>
-              <div className="space-y-1 mt-1">
+              <div className="space-y-1.5 mt-2">
                 {pieData.slice(0, 4).map((item, i) => (
                   <div key={i} className="flex items-center justify-between text-xs">
                     <span className="flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full" style={{ background: SEVERITY_COLORS[item.name] || SEVERITY_COLORS.default }} />
-                      <span className="text-gray-600">{item.name}</span>
+                      <span className="text-slate-400">{item.name}</span>
                     </span>
-                    <span className="font-semibold text-gray-800">{item.value}</span>
+                    <span className="font-semibold text-slate-300">{item.value}</span>
                   </div>
                 ))}
               </div>
             </>
           ) : (
-            <div className="h-[180px] flex flex-col items-center justify-center text-gray-300 gap-2">
+            <div className="h-[180px] flex flex-col items-center justify-center text-slate-600 gap-2">
               <Zap className="w-8 h-8" />
               <span className="text-sm">Chưa có dữ liệu</span>
             </div>
@@ -160,24 +173,24 @@ export default function Overview() {
       </div>
 
       {/* ── ROW 3: Recent Alerts (full width) ── */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-gray-700">Cảnh báo gần đây</h3>
-          <a href="/alerts" className="text-xs text-blue-500 hover:underline">Xem tất cả →</a>
+      <div className="bg-slate-900/60 backdrop-blur-sm rounded-xl border border-slate-800/60 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-slate-300">Cảnh báo gần đây</h3>
+          <a href="/alerts" className="text-xs text-blue-400 hover:text-blue-300 transition-colors">Xem tất cả →</a>
         </div>
         <div className="space-y-2 max-h-[220px] overflow-y-auto">
           {recentAlerts.length > 0 ? recentAlerts.map((alert) => (
-            <div key={alert.alert_id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+            <div key={alert.alert_id} className="flex items-center justify-between py-2.5 px-3 rounded-lg border border-slate-800/60 hover:bg-slate-800/40 transition-colors">
               <div className="min-w-0 flex-1 mr-2">
-                <p className="text-sm font-medium text-gray-800 truncate">{alert.attack_type}</p>
-                <p className="text-xs text-gray-400 truncate">
+                <p className="text-sm font-medium text-slate-200 truncate">{alert.attack_type}</p>
+                <p className="text-xs text-slate-500 truncate">
                   {alert.source_ip} → {alert.dest_ip} · {formatDatetime(alert.timestamp)}
                 </p>
               </div>
               <SeverityBadge severity={alert.severity} />
             </div>
           )) : (
-            <div className="h-[160px] flex flex-col items-center justify-center text-gray-300 gap-2">
+            <div className="h-[160px] flex flex-col items-center justify-center text-slate-600 gap-2">
               <AlertTriangle className="w-8 h-8" />
               <span className="text-sm">Chưa có cảnh báo</span>
             </div>

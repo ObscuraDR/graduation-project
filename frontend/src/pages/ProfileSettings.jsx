@@ -54,26 +54,34 @@ export default function ProfileSettings() {
     }
   };
 
+  const inputClass = "w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-200 placeholder-slate-600 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+
   return (
-    <div className="p-6 max-w-2xl mx-auto space-y-8">
+    <div className="max-w-2xl mx-auto space-y-6">
+      {/* Header */}
       <div className="flex items-center gap-3">
-        <User className="w-8 h-8 text-blue-500" />
-        <h1 className="text-2xl font-bold text-gray-900">Cài đặt tài khoản</h1>
+        <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20">
+          <User className="w-6 h-6 text-blue-400" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-100">Cài đặt tài khoản</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Quản lý thông tin cá nhân và bảo mật</p>
+        </div>
       </div>
 
       {/* Thông tin cá nhân (Read-only) */}
-      <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-xl space-y-4">
-        <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-          <ShieldCheck className="w-5 h-5 text-green-500" /> Thông tin cá nhân
+      <div className="bg-slate-900/60 backdrop-blur-sm rounded-2xl p-6 border border-slate-800/60 space-y-4">
+        <h2 className="text-base font-semibold text-slate-200 flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5 text-emerald-400" /> Thông tin cá nhân
         </h2>
         <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 uppercase">Tên đăng nhập</label>
-            <p className="text-gray-800 font-medium mt-1">{user?.username}</p>
+          <div className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4">
+            <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Tên đăng nhập</label>
+            <p className="text-slate-200 font-medium">{user?.username}</p>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 uppercase">Vai trò</label>
-            <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200 capitalize">
+          <div className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4">
+            <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Vai trò</label>
+            <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 capitalize">
               {user?.role}
             </span>
           </div>
@@ -81,65 +89,44 @@ export default function ProfileSettings() {
       </div>
 
       {/* Form đổi mật khẩu */}
-      <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-6 border border-gray-200 shadow-xl space-y-5">
-        <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-          <Lock className="w-5 h-5 text-blue-500" /> Đổi mật khẩu
+      <form onSubmit={handleSubmit} className="bg-slate-900/60 backdrop-blur-sm rounded-2xl p-6 border border-slate-800/60 space-y-5">
+        <h2 className="text-base font-semibold text-slate-200 flex items-center gap-2">
+          <Lock className="w-5 h-5 text-blue-400" /> Đổi mật khẩu
         </h2>
 
         {message.text && (
           <div className={`p-4 rounded-xl flex items-center gap-3 border ${
             message.type === 'success' 
-              ? 'bg-green-50 border-green-200 text-green-700' 
-              : 'bg-red-50 border-red-200 text-red-700'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+              : 'bg-red-500/10 border-red-500/30 text-red-400'
           }`}>
-            {message.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+            {message.type === 'success' ? <CheckCircle2 className="w-5 h-5 flex-shrink-0" /> : <AlertCircle className="w-5 h-5 flex-shrink-0" />}
             <span className="text-sm font-medium">{message.text}</span>
           </div>
         )}
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1.5">Mật khẩu hiện tại</label>
-            <input
-              type="password"
-              name="old_password"
-              value={formData.old_password}
-              onChange={handleChange}
-              required
-              className="w-full bg-white border border-gray-300 rounded-xl px-4 py-2.5 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-              placeholder="••••••••"
-            />
+            <label className="block text-sm font-medium text-slate-400 mb-1.5">Mật khẩu hiện tại</label>
+            <input type="password" name="old_password" value={formData.old_password} onChange={handleChange}
+              required className={inputClass} placeholder="••••••••" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1.5">Mật khẩu mới</label>
-            <input
-              type="password"
-              name="new_password"
-              value={formData.new_password}
-              onChange={handleChange}
-              required
-              className="w-full bg-white border border-gray-300 rounded-xl px-4 py-2.5 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-              placeholder="••••••••"
-            />
+            <label className="block text-sm font-medium text-slate-400 mb-1.5">Mật khẩu mới</label>
+            <input type="password" name="new_password" value={formData.new_password} onChange={handleChange}
+              required className={inputClass} placeholder="••••••••" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1.5">Xác nhận mật khẩu mới</label>
-            <input
-              type="password"
-              name="confirm_password"
-              value={formData.confirm_password}
-              onChange={handleChange}
-              required
-              className="w-full bg-white border border-gray-300 rounded-xl px-4 py-2.5 text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-              placeholder="••••••••"
-            />
+            <label className="block text-sm font-medium text-slate-400 mb-1.5">Xác nhận mật khẩu mới</label>
+            <input type="password" name="confirm_password" value={formData.confirm_password} onChange={handleChange}
+              required className={inputClass} placeholder="••••••••" />
           </div>
         </div>
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-blue-600/20"
+          className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20"
         >
           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
           {loading ? 'Đang xử lý...' : 'Cập nhật mật khẩu'}

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Dict
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 # ── Async log queue — nhận events từ nhiều agents, batch insert vào DB ────────
 _log_queue: asyncio.Queue = asyncio.Queue(maxsize=10_000)
 _log_worker_task: Optional[asyncio.Task] = None
+
+# ── Firewall command queue — lưu lệnh firewall pending cho từng server ────────
+_firewall_commands: Dict[int, List[Dict]] = defaultdict(list)  # server_id -> list of commands
 
 
 async def start_log_worker():
@@ -272,6 +275,13 @@ class AgentLogPayload(BaseModel):
     timestamp: str
 
 
+class FirewallCommand(BaseModel):
+    """Firewall command payload."""
+    action: str = Field(..., pattern="^(block|unblock)$")
+    ip: str = Field(..., pattern=r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$")
+    reason: Optional[str] = Field(None, max_length=500)
+
+
 @router.post("/{server_id}/logs")
 async def receive_agent_logs(
     server_id: int,
@@ -317,3 +327,71 @@ async def receive_agent_logs(
     
     logger.debug("Queued %d security events from server %s", event_count, server_name)
     return {"status": "accepted", "queued_events": event_count}
+
+
+@router.post("/{server_id}/firewall-command")
+async def send_firewall_command(
+    server_id: int,
+    command: FirewallCommand,
+    request: Request,
+    db: Session = Depends(get_db),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Endpoint để gửi lệnh firewall đến agent trên server cụ thể.
+    Lệnh được lưu vào queue và agent sẽ fetch qua polling.
+    """
+    # Validate server exists
+    server = ServerRepository.get_server_by_id(db, server_id)
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+    
+    # Add command to queue
+    cmd_dict = {
+        "action": command.action,
+        "ip": command.ip,
+        "reason": command.reason or f"Manual command from {get_client_ip(request)}",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    _firewall_commands[server_id].append(cmd_dict)
+    
+    logger.info(f"Queued firewall command for server {server_id}: {command.action} {command.ip}")
+    
+    record_audit(
+        db, "system", "send_firewall_command",
+        resource_type="server", resource_id=str(server_id),
+        details={"action": command.action, "ip": command.ip, "reason": command.reason},
+        client_ip=get_client_ip(request),
+    )
+    
+    return {"status": "queued", "command": cmd_dict}
+
+
+@router.get("/{server_id}/commands")
+async def get_firewall_commands(
+    server_id: int,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Endpoint để agent fetch các lệnh firewall pending.
+    Agent sẽ gọi endpoint này định kỳ (polling).
+    """
+    # Validate server exists
+    from backend.database.repository import ServerRepository
+    from backend.database.connection import get_db
+    db_gen = get_db()
+    db = next(db_gen)
+    try:
+        server = ServerRepository.get_server_by_id(db, server_id)
+        if not server:
+            raise HTTPException(status_code=404, detail="Server not found")
+    finally:
+        db.close()
+    
+    # Get and clear commands for this server
+    commands = _firewall_commands.get(server_id, [])
+    _firewall_commands[server_id] = []  # Clear after fetching
+    
+    logger.debug(f"Agent fetched {len(commands)} commands for server {server_id}")
+    
+    return {"commands": commands}
