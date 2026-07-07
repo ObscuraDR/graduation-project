@@ -51,26 +51,67 @@ SSL_VERIFY   = False if _ssl_env.lower() == "false" else True
 
 def _detect_tailscale_url() -> str:
     """
-    Tự động phát hiện Tailscale IP của backend nếu có.
-    Ưu tiên: IDS_API_URL env → Tailscale IP → localhost fallback.
+    Tự động phát hiện Tailscale IP của backend trong Tailnet.
+    Ưu tiên:
+      1. IDS_API_URL env
+      2. Quét các thiết bị trong mạng Tailscale (qua local API hoặc CLI) để tìm IDS Backend (port 8000)
+      3. Fallback: http://localhost:8000/api/servers
     """
     env_url = os.environ.get("IDS_API_URL", "")
     if env_url:
         return env_url  # Env đã set → dùng luôn
 
-    # Thử tìm Tailscale IP trong bảng routing (Linux)
+    peers_ips = []
+
+    # 1. Thử gọi Tailscale Local API (hỗ trợ tốt trên Windows/macOS/Linux khi service đang chạy)
     try:
-        import subprocess
-        result = subprocess.run(
-            ["ip", "route", "show", "100.64.0.0/10"],
-            capture_output=True, text=True, timeout=3
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            # Có Tailscale route → dùng default gateway 100.x.x.x
-            # Nhưng cần biết IP của backend → vẫn cần config
-            logger.info("Tailscale network detected. Set IDS_API_URL to use Tailscale.")
+        response = httpx.get("http://localhost:41112/localapi/v0/status", timeout=1.5)
+        if response.status_code == 200:
+            data = response.json()
+            peer_dict = data.get("Peer", {})
+            for peer_id, peer_info in peer_dict.items():
+                ips = peer_info.get("TailscaleIPs", [])
+                if ips:
+                    peers_ips.append(ips[0])
     except Exception:
         pass
+
+    # 2. Nếu local API thất bại, thử gọi tailscale CLI để lấy thông tin
+    if not peers_ips:
+        try:
+            import json
+            result = subprocess.run(
+                ["tailscale", "status", "--json"],
+                capture_output=True, text=True, timeout=3, shell=(platform.system() == "Windows")
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                data = json.loads(result.stdout)
+                peer_dict = data.get("Peer", {})
+                for peer_id, peer_info in peer_dict.items():
+                    ips = peer_info.get("TailscaleIPs", [])
+                    if ips:
+                        peers_ips.append(ips[0])
+        except Exception:
+            pass
+
+    # 3. Quét các peers để tìm backend đang lắng nghe trên cổng 8000
+    if peers_ips:
+        logger.info("Phát hiện mạng Tailscale. Đang quét các peer để tự động kết nối backend...")
+        for ip in peers_ips:
+            # Bỏ qua IPv6 để quét nhanh hơn và tránh lỗi phân giải trên một số hệ thống
+            if ":" in ip:
+                continue
+            try:
+                test_url = f"http://{ip}:8000/health"
+                resp = httpx.get(test_url, timeout=1.0)
+                if resp.status_code == 200:
+                    resp_data = resp.json()
+                    if resp_data.get("service") == "IDS Backend":
+                        resolved_url = f"http://{ip}:8000/api/servers"
+                        logger.info("Đã tự động kết nối đến backend trên Tailscale: %s", resolved_url)
+                        return resolved_url
+            except Exception:
+                pass
 
     return "http://localhost:8000/api/servers"  # fallback
 

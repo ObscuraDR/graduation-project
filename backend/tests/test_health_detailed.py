@@ -37,13 +37,6 @@ def _cache_mock(ok: bool):
     return m
 
 
-def _mongo_mock(ok: bool):
-    m = MagicMock()
-    if not ok:
-        m.admin.command.side_effect = Exception("mongo down")
-    return m
-
-
 def _loader_mock(loaded: bool):
     m = MagicMock()
     m.is_loaded = loaded
@@ -53,16 +46,14 @@ def _loader_mock(loaded: bool):
 PATCHES = {
     "engine": "backend.database.connection.engine",
     "cache": "backend.cache.redis_cache.get_cache",
-    "mongo": "backend.database.connection.get_mongo_client",
     "loader": "backend.detection_engine.model_loader.get_model_loader",
 }
 
 
 class TestHealthDetailed:
-    def _call(self, client, postgres=True, redis=True, mongo=True, model=True):
+    def _call(self, client, postgres=True, cache=True, model=True):
         with patch(PATCHES["engine"], _engine_mock(postgres)), \
-             patch(PATCHES["cache"], return_value=_cache_mock(redis)), \
-             patch(PATCHES["mongo"], return_value=_mongo_mock(mongo)), \
+             patch(PATCHES["cache"], return_value=_cache_mock(cache)), \
              patch(PATCHES["loader"], return_value=_loader_mock(model)):
             return client.get("/health/detailed")
 
@@ -71,8 +62,7 @@ class TestHealthDetailed:
         assert resp.status_code == 200
         data = resp.json()
         assert data["postgres"]["connected"] is True
-        assert data["redis"]["connected"] is True
-        assert data["mongo"]["connected"] is True
+        assert data["cache"]["connected"] is True
         assert data["model_loaded"] is True
         assert data["pipeline_running"] is False
         assert "timestamp" in data
@@ -82,15 +72,10 @@ class TestHealthDetailed:
         assert resp.status_code == 200
         assert resp.json()["postgres"]["connected"] is False
 
-    def test_redis_down(self, client):
-        resp = self._call(client, redis=False)
+    def test_cache_down(self, client):
+        resp = self._call(client, cache=False)
         assert resp.status_code == 200
-        assert resp.json()["redis"]["connected"] is False
-
-    def test_mongo_down(self, client):
-        resp = self._call(client, mongo=False)
-        assert resp.status_code == 200
-        assert resp.json()["mongo"]["connected"] is False
+        assert resp.json()["cache"]["connected"] is False
 
     def test_model_not_loaded(self, client):
         resp = self._call(client, model=False)
@@ -98,16 +83,15 @@ class TestHealthDetailed:
         assert resp.json()["model_loaded"] is False
 
     def test_all_services_down(self, client):
-        resp = self._call(client, postgres=False, redis=False, mongo=False, model=False)
+        resp = self._call(client, postgres=False, cache=False, model=False)
         assert resp.status_code == 200
         data = resp.json()
         assert data["postgres"]["connected"] is False
-        assert data["redis"]["connected"] is False
-        assert data["mongo"]["connected"] is False
+        assert data["cache"]["connected"] is False
         assert data["model_loaded"] is False
 
     def test_response_schema(self, client):
         resp = self._call(client)
         data = resp.json()
-        required = {"postgres", "redis", "mongo", "model_loaded", "pipeline_running", "timestamp"}
+        required = {"postgres", "cache", "model_loaded", "pipeline_running", "timestamp"}
         assert required.issubset(data.keys())
