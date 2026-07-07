@@ -134,3 +134,48 @@ def query_security_logs(
     except Exception as exc:
         logger.warning("Security log query failed: %s", exc)
         return {"items": [], "total": 0, "limit": limit, "skip": skip, "error": str(exc)}
+
+
+def cleanup_old_logs(retention_days: int = LOG_TTL_DAYS) -> int:
+    """
+    Xóa logs cũ hơn retention_days ngày.
+    Gọi từ background worker để tránh bảng security_logs phình to.
+    Trả về số dòng đã xóa.
+    """
+    try:
+        from backend.database.connection import SessionLocal
+        from backend.database.models import SecurityLog
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        db = SessionLocal()
+        try:
+            deleted = db.query(SecurityLog).filter(
+                SecurityLog.timestamp < cutoff
+            ).delete(synchronize_session=False)
+            db.commit()
+            if deleted > 0:
+                logger.info("Security log cleanup: deleted %d rows older than %d days", deleted, retention_days)
+            return deleted
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error("Security log cleanup error: %s", e)
+        return 0
+
+
+async def log_cleanup_task(interval_hours: int = 6, retention_days: int = LOG_TTL_DAYS):
+    """
+    Background async task: dọn dẹp security_logs cũ mỗi 6 giờ.
+    Tránh bảng phình to khi có nhiều máy chủ con gửi log.
+    """
+    import asyncio
+    logger.info("Security log cleanup task started (every %dh, retain %dd)", interval_hours, retention_days)
+    while True:
+        await asyncio.sleep(interval_hours * 3600)
+        try:
+            # Chạy blocking DB operation trong thread pool
+            deleted = await asyncio.to_thread(cleanup_old_logs, retention_days)
+            if deleted > 0:
+                logger.info("Auto-cleanup: removed %d old security logs", deleted)
+        except Exception as e:
+            logger.error("Log cleanup task error: %s", e)

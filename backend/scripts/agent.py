@@ -48,6 +48,38 @@ LOG_PATH     = os.environ.get("AGENT_LOG_PATH", "/var/log/auth.log")
 _ssl_env     = os.environ.get("AGENT_SSL_VERIFY", "true")
 SSL_VERIFY   = False if _ssl_env.lower() == "false" else True
 
+
+def _detect_tailscale_url() -> str:
+    """
+    Tự động phát hiện Tailscale IP của backend nếu có.
+    Ưu tiên: IDS_API_URL env → Tailscale IP → localhost fallback.
+    """
+    env_url = os.environ.get("IDS_API_URL", "")
+    if env_url:
+        return env_url  # Env đã set → dùng luôn
+
+    # Thử tìm Tailscale IP trong bảng routing (Linux)
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["ip", "route", "show", "100.64.0.0/10"],
+            capture_output=True, text=True, timeout=3
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # Có Tailscale route → dùng default gateway 100.x.x.x
+            # Nhưng cần biết IP của backend → vẫn cần config
+            logger.info("Tailscale network detected. Set IDS_API_URL to use Tailscale.")
+    except Exception:
+        pass
+
+    return "http://localhost:8000/api/servers"  # fallback
+
+
+# Resolve URL (Tailscale auto-detect hoặc env)
+if not os.environ.get("IDS_API_URL"):
+    API_URL = _detect_tailscale_url()
+    logger.info("API_URL resolved to: %s", API_URL)
+
 # ── Ngưỡng phát hiện (lọc tại nguồn) ────────────────────────────────────────
 SSH_FAIL_THRESHOLD    = 5    # Số lần fail SSH trong 60s → alert
 CPU_SPIKE_THRESHOLD   = 85.0 # CPU% vượt ngưỡng → alert
@@ -137,59 +169,70 @@ def compress_payload(payload: dict) -> bytes:
 
 # ── Local Firewall Execution ─────────────────────────────────────────────────────
 
-def block_ip_local(ip: str, reason: str = "Remote command") -> bool:
-    """Chặn IP tại local firewall (iptables/netsh)."""
+# Track các IP đã được local-block và thời điểm hết hạn
+# Format: {ip: expires_at_timestamp}
+_local_blocks: Dict[str, float] = {}
+LOCAL_AUTO_BLOCK_DURATION_HOURS = float(os.environ.get("AGENT_AUTO_BLOCK_HOURS", "1"))
+
+
+def block_ip_local(ip: str, reason: str = "Remote command", duration_hours: float = None) -> bool:
+    """
+    Chặn IP tại local firewall (iptables/netsh) với thời hạn tự động.
+    Lưu vào _local_blocks để auto-unblock sau khi hết giờ.
+    """
+    dur = duration_hours if duration_hours is not None else LOCAL_AUTO_BLOCK_DURATION_HOURS
+    expires_at = time.monotonic() + dur * 3600
     try:
         if platform.system() == "Linux":
-            # Check if already blocked
             check = subprocess.run(
                 ["iptables", "-C", "INPUT", "-s", ip, "-j", "DROP"],
                 capture_output=True, text=True
             )
             if check.returncode == 0:
-                logger.info(f"IP {ip} already blocked locally")
+                logger.info("IP %s already blocked locally", ip)
+                _local_blocks[ip] = expires_at  # Refresh expiry
                 return True
-            
-            # Block with comment
+
             result = subprocess.run(
                 ["iptables", "-A", "INPUT", "-s", ip, "-j", "DROP",
                  "-m", "comment", "--comment", f"Z-Sentinel: {reason}"],
                 capture_output=True, text=True
             )
             if result.returncode == 0:
-                logger.info(f"Blocked {ip} locally: {reason}")
+                _local_blocks[ip] = expires_at
+                logger.info("Blocked %s locally for %.1fh: %s", ip, dur, reason)
                 return True
             else:
-                logger.error(f"Failed to block {ip}: {result.stderr}")
+                logger.error("Failed to block %s: %s", ip, result.stderr)
                 return False
-                
+
         elif platform.system() == "Windows":
             rule_name = f"Z-Sentinel-Block-{ip}"
-            # Check if rule exists
             check = subprocess.run(
                 ["netsh", "advfirewall", "firewall", "show", "rule", f"name={rule_name}"],
                 capture_output=True, text=True
             )
             if check.returncode == 0:
-                logger.info(f"IP {ip} already blocked locally")
+                logger.info("IP %s already blocked locally (Windows)", ip)
+                _local_blocks[ip] = expires_at
                 return True
-            
-            # Add rule
+
             result = subprocess.run(
                 ["netsh", "advfirewall", "firewall", "add", "rule",
                  f"name={rule_name}", "dir=in", "action=block", f"remoteip={ip}",
-                 f"description=Z-Sentinel Remote Block: {reason}"],
+                 f"description=Z-Sentinel Auto Block ({dur:.0f}h): {reason}"],
                 capture_output=True, text=True
             )
             if result.returncode == 0:
-                logger.info(f"Blocked {ip} locally: {reason}")
+                _local_blocks[ip] = expires_at
+                logger.info("Blocked %s locally for %.1fh: %s", ip, dur, reason)
                 return True
             else:
-                logger.error(f"Failed to block {ip}: {result.stderr}")
+                logger.error("Failed to block %s: %s", ip, result.stderr)
                 return False
         return False
     except Exception as e:
-        logger.error(f"Error blocking IP locally: {e}")
+        logger.error("Error blocking IP locally: %s", e)
         return False
 
 
@@ -326,8 +369,85 @@ def scan_cpu_spike(cpu: float, ram: float) -> Optional[Dict]:
     return None
 
 
+def scan_web_attacks(log_path: str) -> Optional[Dict]:
+    """
+    Phát hiện tấn công web từ nginx/apache access.log.
+    Phát hiện: SQL injection, path traversal, DDoS (nhiều request/IP).
+    Chỉ đọc dòng MỚI (incremental).
+    """
+    new_lines = _read_new_lines(log_path)
+    if not new_lines:
+        return None
+
+    # Patterns tấn công web phổ biến
+    sqli_pattern    = re.compile(r"(union.*select|select.*from|drop.*table|insert.*into|'.*or.*'|1=1|--\s)", re.IGNORECASE)
+    traversal_pattern = re.compile(r"\.\./|\.\.\\|%2e%2e|etc/passwd|etc/shadow", re.IGNORECASE)
+    ip_pattern      = re.compile(r'"?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"?')
+    status_pattern  = re.compile(r'" (\d{3}) ')
+
+    sqli_ips: Dict[str, int] = defaultdict(int)
+    traversal_ips: Dict[str, int] = defaultdict(int)
+    error_ips: Dict[str, int] = defaultdict(int)  # 4xx/5xx
+
+    for line in new_lines:
+        ip_m = ip_pattern.search(line)
+        if not ip_m:
+            continue
+        ip = ip_m.group(1)
+
+        if sqli_pattern.search(line):
+            sqli_ips[ip] += 1
+        if traversal_pattern.search(line):
+            traversal_ips[ip] += 1
+
+        status_m = status_pattern.search(line)
+        if status_m and status_m.group(1).startswith(('4', '5')):
+            error_ips[ip] += 1
+
+    # SQL Injection
+    for ip, count in sqli_ips.items():
+        if count >= 3:
+            return {
+                "event_type": "sql_injection",
+                "source_ip": ip,
+                "count": count,
+                "severity": "critical" if count >= 10 else "high",
+                "message": f"SQL injection attempts from {ip}: {count} requests in nginx log",
+                "log_source": log_path,
+                "attack_type": "sql_injection",
+            }
+
+    # Path Traversal
+    for ip, count in traversal_ips.items():
+        if count >= 2:
+            return {
+                "event_type": "path_traversal",
+                "source_ip": ip,
+                "count": count,
+                "severity": "high",
+                "message": f"Path traversal attempts from {ip}: {count} requests",
+                "log_source": log_path,
+                "attack_type": "path_traversal",
+            }
+
+    # HTTP Flood (nhiều lỗi 4xx từ 1 IP)
+    for ip, count in error_ips.items():
+        if count >= 50:
+            return {
+                "event_type": "http_flood",
+                "source_ip": ip,
+                "count": count,
+                "severity": "medium",
+                "message": f"HTTP flood from {ip}: {count} error responses",
+                "log_source": log_path,
+                "attack_type": "http_flood",
+            }
+
+    return None
+
+
 def scan_network_anomaly() -> Optional[Dict]:
-    """Phát hiện lượng kết nối SYN bất thường (dấu hiệu đang bị tấn công hoặc đang tấn công)."""
+    """Phát hiện lượng kết nối SYN bất thường."""
     try:
         conns = psutil.net_connections(kind='tcp')
         syn_sent  = sum(1 for c in conns if c.status == 'SYN_SENT')
@@ -363,25 +483,49 @@ def collect_security_events(cpu: float, ram: float) -> List[Dict]:
     """
     Gom tất cả security events từ nhiều nguồn.
     Chỉ trả về events vượt ngưỡng — KHÔNG gửi log bình thường.
-    Đây là bộ lọc tại nguồn để giảm tải backend.
+    ★ Tự động phản ứng LOCAL khi phát hiện tấn công nghiêm trọng.
     """
     events = []
 
-    # 1. SSH brute force (chỉ trên Linux)
+    # 1. SSH brute force từ auth.log (Linux)
     if platform.system() == "Linux" and os.path.exists(LOG_PATH):
         ev = scan_ssh_bruteforce(LOG_PATH)
         if ev:
             events.append(ev)
+            src_ip = ev.get("source_ip")
+            severity = ev.get("severity", "low")
+            if src_ip and severity in ("high", "critical"):
+                logger.warning("[LOCAL RESPONSE] Auto-blocking %s (SSH brute force)", src_ip)
+                success = block_ip_local(src_ip, reason=f"Local auto-block: {ev['message']}")
+                ev["local_blocked"] = success
+                ev["local_action"] = "blocked" if success else "block_failed"
 
-    # 2. Resource spike
+    # 2. Web server attacks từ nginx/apache log
+    for web_log in ["/var/log/nginx/access.log", "/var/log/apache2/access.log"]:
+        if os.path.exists(web_log):
+            ev = scan_web_attacks(web_log)
+            if ev:
+                events.append(ev)
+                # Auto-block nếu là SQL injection hoặc nhiều lỗi 4xx
+                if ev.get("attack_type") in ("sql_injection", "path_traversal"):
+                    src_ip = ev.get("source_ip")
+                    if src_ip:
+                        logger.warning("[LOCAL RESPONSE] Auto-blocking %s (web attack: %s)", src_ip, ev.get("attack_type"))
+                        block_ip_local(src_ip, reason=f"Web attack: {ev.get('attack_type')}", duration_hours=0.5)
+                        ev["local_blocked"] = True
+
+    # 3. Resource spike
     ev = scan_cpu_spike(cpu, ram)
     if ev:
         events.append(ev)
 
-    # 3. Network anomaly
+    # 4. Network anomaly
     ev = scan_network_anomaly()
     if ev:
         events.append(ev)
+        if ev.get("event_type") == "syn_flood_inbound" and ev.get("severity") == "high":
+            logger.warning("[LOCAL RESPONSE] SYN flood detected (%d connections).", ev.get("count", 0))
+            ev["local_action"] = "rate_limit_recommended"
 
     return events
 
@@ -418,14 +562,38 @@ async def execute_firewall_command(command: Dict) -> bool:
     action = command.get("action")
     ip = command.get("ip")
     reason = command.get("reason", "Remote command")
-    
+    duration_hours = command.get("duration_hours", LOCAL_AUTO_BLOCK_DURATION_HOURS)
+
     if action == "block":
-        return block_ip_local(ip, reason)
+        return block_ip_local(ip, reason, duration_hours=float(duration_hours))
     elif action == "unblock":
+        _local_blocks.pop(ip, None)  # Xóa khỏi tracking
         return unblock_ip_local(ip)
     else:
-        logger.warning(f"Unknown command action: {action}")
+        logger.warning("Unknown command action: %s", action)
         return False
+
+
+def auto_unblock_check() -> int:
+    """
+    Kiểm tra và tự động unblock các IP đã hết thời hạn.
+    Gọi định kỳ trong run_agent loop.
+    Returns: số IP đã được unblock.
+    """
+    now = time.monotonic()
+    expired = [ip for ip, exp in list(_local_blocks.items()) if now >= exp]
+    unblocked = 0
+    for ip in expired:
+        logger.info("Auto-unblocking expired block: %s", ip)
+        if unblock_ip_local(ip):
+            del _local_blocks[ip]
+            unblocked += 1
+        else:
+            # Nếu unblock fail → thử lần sau
+            logger.warning("Auto-unblock failed for %s, will retry", ip)
+    if unblocked:
+        logger.info("Auto-unblocked %d expired IPs", unblocked)
+    return unblocked
 
 
 async def process_pending_commands(client: httpx.AsyncClient) -> None:
@@ -570,6 +738,13 @@ async def run_agent() -> None:
                     await process_pending_commands(client)
                 except Exception as e:
                     logger.error("Error processing firewall commands: %s", e)
+
+            # ── 5. Auto-unblock IPs hết hạn (mỗi 60 giây) ────────────────────
+            if int(time.monotonic()) % 60 == 0:
+                try:
+                    auto_unblock_check()
+                except Exception as e:
+                    logger.debug("Auto-unblock check error: %s", e)
 
             # ── 5. Sleep đến lần gửi tiếp theo ─────────────────────────────
             elapsed = time.monotonic() - loop_start

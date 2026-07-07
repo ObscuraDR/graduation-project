@@ -260,7 +260,7 @@ class AttackReplayDemo:
         unique_src: bool,
     ) -> None:
         """Background worker: replay each sample through the real pipeline."""
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         # Import inside the thread so import errors surface in stats, not at module load.
         try:
@@ -290,7 +290,7 @@ class AttackReplayDemo:
             return
 
         with self._lock:
-            self.stats.started_at = datetime.utcnow().isoformat()
+            self.stats.started_at = datetime.now(timezone.utc).isoformat()
 
         try:
             flow_index = 0
@@ -353,7 +353,7 @@ class AttackReplayDemo:
                         self._stop_event.wait(delay_sec)
         finally:
             with self._lock:
-                self.stats.finished_at = datetime.utcnow().isoformat()
+                self.stats.finished_at = datetime.now(timezone.utc).isoformat()
                 self.stats.running = False
             logger.info(
                 "Replay finished: replayed=%d detected=%d broadcast=%d suppressed=%d",

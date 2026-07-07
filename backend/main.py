@@ -123,6 +123,21 @@ async def lifespan(app: FastAPI):
     ueba_task = asyncio.create_task(ueba_detection_task(interval_seconds=60))
     logger.info("UEBA Detection worker started.")
 
+    # Start log batch worker cho server agent logs
+    from backend.api.routes.servers import start_log_worker
+    await start_log_worker()
+    logger.info("Server log batch worker started.")
+
+    # Start security log cleanup task (dọn log cũ mỗi 6 giờ)
+    from backend.database.security_log_store import log_cleanup_task
+    log_cleanup = asyncio.create_task(log_cleanup_task(interval_hours=6, retention_days=7))
+    logger.info("Security log cleanup task started.")
+
+    # Start anomaly detection worker (học baseline + phát hiện bất thường)
+    from backend.database.anomaly_worker import anomaly_detection_task
+    anomaly_task = asyncio.create_task(anomaly_detection_task(interval_seconds=30))
+    logger.info("Anomaly detection worker started.")
+
     # Start background worker cho Log Cleanup (Tier 4 - TTL)
     from backend.api.routes.servers import start_log_worker
     await start_log_worker()
@@ -174,6 +189,16 @@ async def lifespan(app: FastAPI):
 
     # Stop UEBA task
     ueba_task.cancel()
+
+    # Stop log batch worker
+    from backend.api.routes.servers import stop_log_worker
+    await stop_log_worker()
+
+    # Stop security log cleanup task
+    log_cleanup.cancel()
+
+    # Stop anomaly detection worker
+    anomaly_task.cancel()
 
     # Stop log cleanup task
     log_cleanup_task_instance.cancel()

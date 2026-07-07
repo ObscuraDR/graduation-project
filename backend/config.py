@@ -125,6 +125,9 @@ class Settings(BaseSettings):
     cloudflare_api_token: str = ""
     cloudflare_zone_id: str = ""
 
+    # Threat Intelligence
+    abuseipdb_api_key: str = ""   # https://www.abuseipdb.com/account/api — free tier 1000 req/day
+
     # Telegram alerts
     enable_telegram_alerts: bool = False
     telegram_bot_token: str = ""

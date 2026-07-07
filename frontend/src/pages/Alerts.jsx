@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle, Trash2, RefreshCw, Eye, Download, Activity, Zap } from 'lucide-react'
+import { AlertTriangle, CheckCircle, Trash2, RefreshCw, Eye, Download, Activity, Zap, Globe, Shield } from 'lucide-react'
 import SeverityBadge from '../components/SeverityBadge'
 import AlertDetailModal from '../components/AlertDetailModal'
 import Pagination from '../components/Pagination'
@@ -30,22 +30,31 @@ export default function Alerts() {
   const [pageSize, setPageSize] = useState(50)
   const [totalPages, setTotalPages] = useState(1)
 
-  const loadAlerts = async () => {
+  const loadAlerts = async (page = currentPage) => {
     setLoading(true)
     try {
-      const data = await fetchAlerts({ limit: pageSize, skip: (currentPage - 1) * pageSize, ...filter })
-      setAlerts(data.items || data)
-      setTotalPages(Math.ceil((data.total || data.length) / pageSize))
-      _alertsCache = data.items || data
+      const data = await fetchAlerts({ limit: pageSize, skip: (page - 1) * pageSize, ...filter })
+      const items = data.items || data
+      const total = data.total || items.length
+      setAlerts(items)
+      setTotalPages(Math.ceil(total / pageSize))
+      _alertsCache = items
     } catch (err) {
       console.error('Failed to fetch alerts:', err)
     }
     setLoading(false)
   }
 
+  // Khi filter thay đổi → reset về trang 1
   useEffect(() => {
-    loadAlerts()
-  }, [filter, currentPage, pageSize])
+    setCurrentPage(1)
+    loadAlerts(1)
+  }, [filter, pageSize])
+
+  // Khi chuyển trang (không do filter)
+  useEffect(() => {
+    loadAlerts(currentPage)
+  }, [currentPage])
 
   // WebSocket cho Live Feed
   useEffect(() => {
@@ -188,12 +197,48 @@ export default function Alerts() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60">
-                      {alerts.map((alert) => (
+                      {alerts.map((alert) => {
+                        const ti = alert.threat_intel
+                        const isCampaign = alert.correlated && alert.severity === 'critical'
+                        return (
                         <tr key={alert.alert_id}
-                          className="hover:bg-slate-800/40 cursor-pointer transition-colors"
+                          className={`hover:bg-slate-800/40 cursor-pointer transition-colors ${
+                            isCampaign ? 'border-l-2 border-l-red-500' : ''
+                          }`}
                           onClick={() => setSelectedAlert(alert)}>
-                          <td className="px-4 py-3 font-medium text-slate-200">{alert.attack_type}</td>
-                          <td className="px-4 py-3 text-slate-400 font-mono text-xs">{alert.source_ip}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-medium text-slate-200">{alert.attack_type}</span>
+                              {isCampaign && (
+                                <span title="Attack Campaign" className="text-xs bg-red-900/40 text-red-300 border border-red-700 px-1.5 py-0.5 rounded font-medium">
+                                  CAMPAIGN
+                                </span>
+                              )}
+                              {alert.correlated && !isCampaign && (
+                                <Shield className="w-3 h-3 text-orange-400 shrink-0" title="Correlated alert" />
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-slate-400 font-mono text-xs">{alert.source_ip}</span>
+                              {ti && ti.threat_level !== 'safe' && (
+                                <span className={`text-xs px-1 py-0.5 rounded border font-medium ${
+                                  ti.threat_level === 'critical' ? 'bg-red-900/40 text-red-300 border-red-700' :
+                                  ti.threat_level === 'high'     ? 'bg-orange-900/40 text-orange-300 border-orange-700' :
+                                  ti.threat_level === 'medium'   ? 'bg-yellow-900/40 text-yellow-300 border-yellow-700' :
+                                  'bg-slate-800 text-slate-400 border-slate-700'
+                                }`} title={`Abuse score: ${ti.abuse_score}%`}>
+                                  {ti.is_tor ? '🧅TOR' : ti.is_vpn ? '🔒VPN' : `TI:${ti.abuse_score}%`}
+                                </span>
+                              )}
+                              {alert.threat_intel?.country_code && (
+                                <span className="text-xs text-slate-500">
+                                  <Globe className="w-3 h-3 inline mr-0.5" />{alert.threat_intel.country_code}
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="px-4 py-3"><SeverityBadge severity={alert.severity} /></td>
                           <td className="px-4 py-3 text-slate-400">{((alert.confidence ?? 0) * 100).toFixed(1)}%</td>
                           <td className="px-4 py-3 text-slate-500 text-xs">{formatDatetime(alert.timestamp)}</td>
@@ -223,7 +268,8 @@ export default function Alerts() {
                             </div>
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

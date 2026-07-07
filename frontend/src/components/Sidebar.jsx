@@ -11,21 +11,22 @@ export default function Sidebar() {
   const user = getUser();
 
   const navItems = [
-    { to: '/', icon: LayoutDashboard, label: 'Tổng quan' },
+    { to: '/', icon: LayoutDashboard, label: 'Tổng quan', end: true },
     { to: '/alerts', icon: AlertTriangle, label: 'Cảnh báo' },
     { to: '/firewall', icon: Shield, label: 'Firewall' },
-    { to: '/servers', icon: Server, label: 'Agents (Cảm biến)' },
-    { to: '/network', icon: Network, label: 'Lưu lượng' },
+    { to: '/servers', icon: Server, label: 'Máy chủ' },
+    { to: '/traffic', icon: Network, label: 'Lưu lượng' },
     { to: '/logs', icon: ScrollText, label: 'Log Viewer' },
     { to: '/ai-insights', icon: Brain, label: 'AI Insights' },
     { to: '/reports', icon: FileText, label: 'Báo cáo' },
   ];
 
   const settingsItems = [
-    { to: '/settings/profile', icon: User, label: 'Tài khoản' },
-    { to: '/settings/notifications', icon: Bell, label: 'Thông báo' },
-    { to: '/geo-blocking', icon: Globe, label: 'Geo Blocking', roles: ['admin'] },
-    { to: '/settings/users', icon: Users, label: 'Quản lý User & Audit', roles: ['admin'] },
+    { to: '/settings/profile',       icon: User,   label: 'Tài khoản',         end: true },
+    { to: '/audit',                  icon: History, label: 'Audit Log',         end: true, roles: ['admin'] },
+    { to: '/settings/notifications', icon: Bell,   label: 'Thông báo',         end: true },
+    { to: '/geo-blocking',           icon: Globe,  label: 'Geo Blocking',      end: true, roles: ['admin'] },
+    { to: '/settings/users',         icon: Users,  label: 'Quản lý User',      end: true, roles: ['admin'] },
   ];
 
   return (
@@ -44,7 +45,7 @@ export default function Sidebar() {
           <NavLink
             key={item.to}
             to={item.to}
-            end={item.to === '/'}
+            end={item.end}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
                 isActive
@@ -67,6 +68,7 @@ export default function Sidebar() {
             <NavLink
               key={item.to}
               to={item.to}
+              end={item.end}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
                   isActive

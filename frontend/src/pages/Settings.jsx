@@ -66,7 +66,7 @@ export default function Settings() {
 
   const loadHealth = async () => {
     setHealthLoading(true)
-    try { const d = await fetchHealthDetailed(); setHealth(d); setHealthCheckedAt(new Date().toLocaleTimeString()) }
+    try { const d = await fetchHealthDetailed(); setHealth(d); setHealthCheckedAt(new Date().toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })) }
     catch {}
     setHealthLoading(false)
   }

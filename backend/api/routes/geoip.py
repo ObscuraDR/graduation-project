@@ -91,3 +91,33 @@ def lookup_country_info(ip: str) -> Dict[str, Any]:
 async def geoip_lookup(ip_address: str):
     """Resolve country from IP — e.g. 185.221.20.10 → Russia."""
     return lookup_country_info(ip_address)
+
+
+@geoip_router.get("/reputation/{ip_address}")
+async def ip_reputation(ip_address: str):
+    """
+    GET /api/geoip/reputation/{ip} — tra cứu danh tiếng IP từ Threat Intelligence.
+    Kết hợp GeoIP + AbuseIPDB/ip-api để biết IP có lịch sử tấn công không.
+    """
+    try:
+        from backend.intelligence.threat_intel import get_ip_reputation
+        reputation = await get_ip_reputation(ip_address)
+        # Thêm thông tin GeoIP vào kết quả
+        geo = lookup_country_info(ip_address)
+        return {
+            **reputation,
+            "country_name": geo.get("country_name") or reputation.get("country"),
+        }
+    except Exception as e:
+        logger.error("Reputation lookup error for %s: %s", ip_address, e)
+        return {"ip": ip_address, "error": str(e), "threat_level": "unknown"}
+
+
+@geoip_router.get("/reputation/cache/stats")
+async def ti_cache_stats():
+    """Thống kê cache Threat Intelligence."""
+    try:
+        from backend.intelligence.threat_intel import get_cache_stats
+        return get_cache_stats()
+    except Exception as e:
+        return {"error": str(e)}

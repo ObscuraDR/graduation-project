@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { Server, PlusCircle, Edit, Trash2, RefreshCw, Cpu, HardDrive, ShieldCheck, WifiOff, Activity, LineChart as LineChartIcon } from 'lucide-react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Server, PlusCircle, Edit, Trash2, Cpu, HardDrive, ShieldCheck, WifiOff, Activity, LineChart as LineChartIcon, AlertTriangle, Shield, ShieldAlert } from 'lucide-react';
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { formatDatetime, formatChartTime } from '../lib/datetime';
+import { fetchSecurityLogs } from '../lib/api';
 
 const CHART_TOOLTIP_STYLE = {
   background: '#0f172a',
@@ -24,6 +25,9 @@ export default function ServerManagement() {
   const [serverToEdit, setServerToEdit] = useState(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [historyData, setHistoryData] = useState([]);
+  const [baselines, setBaselines] = useState({});
+  // serverEvents: {server_name: [{event_type, severity, message, timestamp}]}
+  const [serverEvents, setServerEvents] = useState({});
 
   useEffect(() => {
     fetchServers();
@@ -37,11 +41,51 @@ export default function ServerManagement() {
     try {
       const response = await axios.get('/api/servers');
       setServers(response.data);
+      response.data.forEach(server => {
+        if (server.status === 'online') {
+          // Fetch baseline
+          axios.get(`/api/servers/${server.id}/baseline`)
+            .then(r => setBaselines(prev => ({ ...prev, [server.id]: r.data })))
+            .catch(() => {})
+        }
+      })
+      // Fetch security events cho từng server (5 phút gần nhất)
+      fetchServerSecurityEvents(response.data);
     } catch (err) {
       setError('Không thể tải danh sách máy chủ.');
-      console.error('Error fetching servers:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchServerSecurityEvents = async (serverList) => {
+    // Lấy security logs 5 phút gần nhất từ tất cả servers
+    try {
+      const data = await fetchSecurityLogs({ limit: 50, skip: 0 });
+      const items = data.items || [];
+
+      // Nhóm theo server name
+      const byServer = {};
+      items.forEach(log => {
+        if (!log.server || log.server === 'local') return;
+        const name = log.server;
+        if (!byServer[name]) byServer[name] = [];
+        // Chỉ giữ events trong 5 phút gần nhất
+        const ts = new Date(log.timestamp);
+        const age = (Date.now() - ts.getTime()) / 1000 / 60; // minutes
+        if (age <= 5) {
+          byServer[name].push({
+            event_type: log.event_type,
+            severity:   log.extra?.severity || 'low',
+            message:    log.message,
+            timestamp:  log.timestamp,
+            source_ip:  log.source_ip,
+          });
+        }
+      });
+      setServerEvents(byServer);
+    } catch (err) {
+      // Không critical — bỏ qua
     }
   };
 
@@ -155,10 +199,43 @@ export default function ServerManagement() {
           <div key={server.id} className="bg-slate-900/60 backdrop-blur-sm p-5 rounded-xl border border-slate-800/60 hover:border-slate-700/60 transition-all">
             <div className="flex items-start justify-between mb-4">
               <h2 className="text-base font-semibold text-slate-100">{server.name}</h2>
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${getStatusBadge(server.status)}`}>
-                {server.status?.toUpperCase()}
-              </span>
+              <div className="flex items-center gap-1.5">
+                {baselines[server.id] && baselines[server.id].cpu && (
+                  <span title={`Baseline CPU: ${baselines[server.id].cpu?.mean}% ±${baselines[server.id].cpu?.stdev}%`}
+                    className="text-xs bg-blue-900/30 text-blue-400 border border-blue-800/60 px-1.5 py-0.5 rounded">
+                    BL
+                  </span>
+                )}
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${getStatusBadge(server.status)}`}>
+                  {server.status?.toUpperCase()}
+                </span>
+              </div>
             </div>
+
+            {/* Attack indicator — hiển thị nếu có events trong 5 phút gần nhất */}
+            {serverEvents[server.name] && serverEvents[server.name].length > 0 && (() => {
+              const events = serverEvents[server.name];
+              const hasCritical = events.some(e => e.severity === 'critical');
+              const hasHigh = events.some(e => e.severity === 'high');
+              const topEvent = events.find(e => e.severity === 'critical') || events.find(e => e.severity === 'high') || events[0];
+              return (
+                <div className={`mb-3 px-3 py-2 rounded-lg border text-xs ${
+                  hasCritical ? 'bg-red-900/30 border-red-700/60 text-red-300' :
+                  hasHigh     ? 'bg-orange-900/30 border-orange-700/60 text-orange-300' :
+                                'bg-yellow-900/30 border-yellow-700/60 text-yellow-300'
+                }`}>
+                  <div className="flex items-center gap-1.5 font-semibold mb-1">
+                    <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                    ⚠️ {hasCritical ? 'ĐANG BỊ TẤN CÔNG' : hasHigh ? 'Phát hiện tấn công' : 'Cảnh báo bảo mật'}
+                    <span className="ml-auto font-normal opacity-70">{events.length} event{events.length > 1 ? 's' : ''} / 5 phút</span>
+                  </div>
+                  <p className="opacity-80 truncate">{topEvent.message}</p>
+                  {topEvent.source_ip && (
+                    <p className="font-mono opacity-60 mt-0.5">IP: {topEvent.source_ip}</p>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="space-y-1.5 text-sm mb-4">
               <p className="text-slate-500">IP: <span className="font-mono text-blue-400">{server.ip_address}</span></p>

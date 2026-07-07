@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { FileText, Download, RefreshCw, Save, ChevronDown } from 'lucide-react'
+import { FileText, Download, RefreshCw, Save, ChevronDown, Printer } from 'lucide-react'
 import { fetchSecurityReport } from '../lib/api'
 import SeverityBadge from '../components/SeverityBadge'
 import { formatDatetime } from '../lib/datetime'
@@ -79,6 +79,84 @@ export default function Reports() {
     URL.revokeObjectURL(url)
   }
 
+  const exportPDF = () => {
+    if (!report) return
+    // Tạo HTML cho PDF rồi in qua window.print()
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Security Report — Z-Sentinel IDS</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 30px; color: #1e293b; font-size: 13px; }
+          h1 { color: #1e40af; font-size: 22px; border-bottom: 2px solid #1e40af; padding-bottom: 8px; }
+          h2 { color: #334155; font-size: 16px; margin-top: 24px; }
+          .meta { color: #64748b; font-size: 12px; margin-bottom: 20px; }
+          .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0; }
+          .kpi-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; text-align: center; }
+          .kpi-value { font-size: 28px; font-weight: bold; margin: 4px 0; }
+          .kpi-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+          .critical { color: #dc2626; } .high { color: #ea580c; } .medium { color: #d97706; } .low { color: #16a34a; }
+          table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12px; }
+          th { background: #f1f5f9; padding: 8px 12px; text-align: left; font-weight: 600; border: 1px solid #e2e8f0; }
+          td { padding: 7px 12px; border: 1px solid #e2e8f0; }
+          tr:nth-child(even) td { background: #f8fafc; }
+          .summary { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 12px 16px; border-radius: 4px; margin: 16px 0; }
+          .footer { margin-top: 40px; color: #94a3b8; font-size: 11px; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 12px; }
+          @media print { body { margin: 15px; } }
+        </style>
+      </head>
+      <body>
+        <h1>🛡️ Z-Sentinel IDS — Security Report</h1>
+        <div class="meta">
+          Kỳ báo cáo: ${report.period_start?.slice(0,10)} → ${report.period_end?.slice(0,10)} &nbsp;|&nbsp;
+          Tạo lúc: ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
+        </div>
+
+        <div class="summary">${report.summary || `Tổng cộng ${report.total_alerts} cảnh báo trong ${hours} giờ.`}</div>
+
+        <h2>📊 Tổng quan</h2>
+        <div class="kpi-grid">
+          <div class="kpi-card"><div class="kpi-value">${report.total_alerts}</div><div class="kpi-label">Tổng cảnh báo</div></div>
+          <div class="kpi-card"><div class="kpi-value critical">${report.critical_count}</div><div class="kpi-label">Critical</div></div>
+          <div class="kpi-card"><div class="kpi-value high">${report.high_count}</div><div class="kpi-label">High</div></div>
+          <div class="kpi-card"><div class="kpi-value medium">${report.medium_count}</div><div class="kpi-label">Medium</div></div>
+          <div class="kpi-card"><div class="kpi-value low">${report.low_count}</div><div class="kpi-label">Low</div></div>
+          <div class="kpi-card"><div class="kpi-value" style="color:#7c3aed">${report.auto_blocked_count}</div><div class="kpi-label">Auto-blocked</div></div>
+        </div>
+
+        ${report.top_attack_types?.length ? `
+        <h2>⚔️ Loại tấn công</h2>
+        <table>
+          <tr><th>Loại tấn công</th><th>Số lần</th><th>Tỉ lệ</th></tr>
+          ${report.top_attack_types.map(t => `
+            <tr><td>${t.type}</td><td>${t.count}</td>
+            <td>${report.total_alerts > 0 ? Math.round(t.count/report.total_alerts*100) : 0}%</td></tr>
+          `).join('')}
+        </table>` : ''}
+
+        ${report.top_attackers?.length ? `
+        <h2>🎯 IP tấn công nhiều nhất</h2>
+        <table>
+          <tr><th>#</th><th>IP Address</th><th>Số lần</th></tr>
+          ${report.top_attackers.map((a, i) => `
+            <tr><td>${i+1}</td><td style="font-family:monospace">${a.ip}</td><td>${a.count}</td></tr>
+          `).join('')}
+        </table>` : ''}
+
+        <div class="footer">
+          Z-Sentinel Intrusion Detection System &bull; Generated automatically &bull; ${new Date().getFullYear()}
+        </div>
+      </body>
+      </html>
+    `
+    const win = window.open('', '_blank')
+    win.document.write(html)
+    win.document.close()
+    setTimeout(() => { win.print(); }, 500)
+  }
+
   const btnClass = "flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-sm rounded-lg transition-colors"
   const primaryBtnClass = "flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors disabled:opacity-50 shadow-lg shadow-blue-500/20"
 
@@ -112,14 +190,18 @@ export default function Reports() {
                   <Download className="w-4 h-4" /> Export <ChevronDown className="w-4 h-4" />
                 </button>
                 {showExportDropdown && (
-                  <div className="absolute right-0 mt-2 w-40 bg-slate-800 rounded-lg shadow-xl border border-slate-700 z-10">
+                  <div className="absolute right-0 mt-2 w-44 bg-slate-800 rounded-lg shadow-xl border border-slate-700 z-10">
                     <button onClick={() => { exportCSV(); setShowExportDropdown(false) }}
                       className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-700 flex items-center gap-2 rounded-t-lg transition-colors">
                       <Download className="w-4 h-4 text-emerald-400" /> CSV
                     </button>
                     <button onClick={() => { exportJSON(); setShowExportDropdown(false) }}
-                      className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-700 flex items-center gap-2 rounded-b-lg transition-colors">
+                      className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-colors">
                       <Download className="w-4 h-4 text-violet-400" /> JSON
+                    </button>
+                    <button onClick={() => { exportPDF(); setShowExportDropdown(false) }}
+                      className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-700 flex items-center gap-2 rounded-b-lg transition-colors">
+                      <Printer className="w-4 h-4 text-blue-400" /> PDF (In)
                     </button>
                   </div>
                 )}

@@ -264,8 +264,21 @@ def update_server_status(
 @router.get("/{server_id}/history", response_model=List[ServerMetricHistoryResponse])
 def get_server_history(server_id: int, limit: int = 100, db: Session = Depends(get_db)):
     """Lấy lịch sử chỉ số của một máy chủ."""
-    from backend.database.repository import ServerMetricHistoryRepository # Moved to top-level import
+    from backend.database.repository import ServerMetricHistoryRepository
     return ServerMetricHistoryRepository.get_history_for_server(db, server_id, limit)
+
+
+@router.get("/{server_id}/baseline")
+def get_server_baseline(server_id: int):
+    """Lấy thông tin baseline anomaly detection của server."""
+    try:
+        from backend.database.anomaly_worker import get_baseline_summary
+        summary = get_baseline_summary(server_id)
+        if not summary:
+            return {"server_id": server_id, "status": "learning", "message": "Đang thu thập dữ liệu baseline (cần ≥10 điểm)"}
+        return summary
+    except Exception as e:
+        return {"server_id": server_id, "error": str(e)}
 
 
 class AgentLogPayload(BaseModel):

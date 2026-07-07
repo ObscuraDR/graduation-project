@@ -85,6 +85,9 @@ class AlertManager:
         self.total_alerts = 0
         self.alerts_by_type: Dict[str, int] = defaultdict(int)
         self.alerts_by_severity: Dict[str, int] = defaultdict(int)
+
+        # Campaign tracking — multi-type attack detection
+        self._active_campaigns: Dict[str, Dict] = {}
         
         # Thread-safe broadcast bridge (set at app startup; never call async WS from sniffer thread)
         self.broadcast_bridge = None
@@ -186,6 +189,25 @@ class AlertManager:
         
         self.total_alerts += 1
         logger.info(f"Alert generated: {attack_type} from {src_ip} (severity: {adjusted_severity})")
+
+        # ── Threat Intelligence enrichment (non-blocking) ─────────────────
+        # Chạy trong background để không block pipeline
+        try:
+            from backend.intelligence.threat_intel import get_ip_reputation, enrich_alert_sync
+            # Kiểm tra cache trước (sync) — nếu đã có → enrich ngay
+            from backend.intelligence.threat_intel import _get_from_cache
+            cached_rep = _get_from_cache(src_ip)
+            if cached_rep:
+                alert = enrich_alert_sync(alert, cached_rep)
+                # Cập nhật severity sau khi enrich
+                adjusted_severity = alert.get("severity", adjusted_severity)
+            else:
+                # Không có cache → schedule async lookup sau khi alert đã gửi
+                # (không block pipeline thread)
+                self._pending_ti_enrichment = getattr(self, "_pending_ti_enrichment", [])
+                self._pending_ti_enrichment.append(src_ip)
+        except Exception as e:
+            logger.debug("TI enrichment skipped: %s", e)
 
         # Auto-block if threshold exceeded
         if self.auto_block_enabled:
@@ -309,40 +331,90 @@ class AlertManager:
         attack_type: str,
         current_severity: str
     ) -> str:
-        """Apply correlation logic to adjust severity."""
+        """
+        Apply enhanced correlation logic — phát hiện attack campaign đa bước.
+
+        Patterns:
+          1. Volume: nhiều alerts từ 1 IP → tăng severity
+          2. Multi-type: PortScan → BruteForce → Botnet = coordinated campaign
+          3. Rapid escalation: DDoS liên tiếp
+          4. Reconnaissance: Scan trước rồi Brute force
+        """
         current_time = datetime.now(timezone.utc)
         window_start = current_time - timedelta(seconds=self.correlation_window)
-        
+
         recent_attacks = [
             alert for alert in self.attack_patterns[src_ip]
             if datetime.fromisoformat(alert['timestamp']) >= window_start
         ]
-        
-        # Count attacks by type
+
+        if not recent_attacks:
+            return current_severity
+
+        # Đếm theo loại
         attack_counts = defaultdict(int)
         for alert in recent_attacks:
             attack_counts[alert['attack_type']] += 1
-        
-        # Correlation logic
+
         total_recent = len(recent_attacks)
-        
-        # Repeated scan attempts => higher severity
+        distinct_types = len(attack_counts)
+
+        severity_order = ['low', 'medium', 'high', 'critical']
+
+        def escalate(sev: str, steps: int = 1) -> str:
+            idx = severity_order.index(sev) if sev in severity_order else 0
+            return severity_order[min(idx + steps, 3)]
+
+        # ── Pattern 1: Volume attack ────────────────────────────────────────
+        if total_recent >= 10:
+            return 'critical'
         if total_recent >= 5:
-            if current_severity in ['low', 'medium']:
+            return escalate(current_severity, 2)
+        if total_recent >= 3:
+            return escalate(current_severity, 1)
+
+        # ── Pattern 2: Multi-type attack campaign ───────────────────────────
+        # Recon (PortScan) → Exploit (BruteForce) = coordinated attack
+        if distinct_types >= 3:
+            logger.warning(
+                "Multi-type attack campaign from %s: %s",
+                src_ip, dict(attack_counts)
+            )
+            # Đánh dấu là campaign để frontend hiển thị
+            self._active_campaigns[src_ip] = {
+                "types": list(attack_counts.keys()),
+                "started_at": recent_attacks[0]['timestamp'],
+                "alert_count": total_recent,
+            }
+            return 'critical'
+
+        if distinct_types == 2:
+            has_scan = 'PortScan' in attack_counts
+            has_brute = 'BruteForce' in attack_counts
+            has_ddos = 'DDoS' in attack_counts
+            has_botnet = 'Botnet' in attack_counts
+
+            if has_scan and has_brute:
+                logger.warning("Recon→Exploit pattern from %s", src_ip)
+                return 'critical'
+            if has_ddos and has_botnet:
+                logger.warning("DDoS+Botnet campaign from %s", src_ip)
+                return 'critical'
+            if has_scan and (has_ddos or has_botnet):
                 return 'high'
-            elif current_severity == 'high':
-                return 'critical'
-        
-        # Port scanning pattern
-        if attack_type in ['PortScan', 'Port Sweep']:
-            if total_recent >= 3:
-                return 'critical'
-        
-        # DDoS pattern
-        if attack_type == 'DDoS':
-            if total_recent >= 2:
-                return 'critical'
-        
+
+        # ── Pattern 3: DDoS rapid escalation ───────────────────────────────
+        if attack_type == 'DDoS' and total_recent >= 2:
+            return 'critical'
+
+        # ── Pattern 4: Port scan rapid ──────────────────────────────────────
+        if attack_type in ('PortScan', 'Port Sweep') and total_recent >= 3:
+            return 'critical'
+
+        # ── Pattern 5: BruteForce persistence ──────────────────────────────
+        if attack_type == 'BruteForce' and total_recent >= 2:
+            return escalate(current_severity, 1)
+
         return current_severity
     
     def _update_attack_patterns(
@@ -465,6 +537,10 @@ class AlertManager:
             'blacklist_count': len(self.blacklist),
             'geo_blocked_countries': list(self.geo_blocked_countries),
             'active_attackers': len(self.attack_patterns),
+            'active_campaigns': len(self._active_campaigns),
+            'campaigns': {
+                ip: camp for ip, camp in list(self._active_campaigns.items())[:10]
+            },
             'confidence_threshold': self.confidence_threshold,
             'alert_cooldown': self.alert_cooldown,
             'correlation_window': self.correlation_window,

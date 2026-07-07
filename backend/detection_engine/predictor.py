@@ -8,7 +8,7 @@ import numpy as np
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from backend.detection_engine.model_loader import ModelLoader, get_model_loader
 from backend.feature_engine.feature_extractor import FeatureExtractor, get_feature_extractor
@@ -260,7 +260,7 @@ class Predictor:
                     for i, prob in enumerate(probabilities)
                 },
                 'features': features,
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'model_name': self.model_loader.model_type,
                 'model_version': '1.0'
             }
@@ -321,7 +321,7 @@ class Predictor:
                         for j, prob in enumerate(probs)
                     },
                     'features': features_list[i],
-                    'timestamp': datetime.utcnow().isoformat(),
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
                     'model_name': self.model_loader.model_type,
                     'model_version': '1.0'
                 })

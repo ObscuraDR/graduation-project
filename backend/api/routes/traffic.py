@@ -7,7 +7,7 @@ Sniffer control (start/stop/status) is ONLY available via /api/sniffer/*
 """
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from fastapi import APIRouter
@@ -50,7 +50,7 @@ async def get_traffic_stats() -> Dict[str, Any]:
     return {
         "flows": flow_builder.get_stats(),
         "pipeline": _pipeline_monitoring_snapshot(),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 

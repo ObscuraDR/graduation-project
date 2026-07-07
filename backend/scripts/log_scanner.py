@@ -5,7 +5,7 @@ import os
 import threading
 import socket
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Deque, Optional
 
 from backend.config import settings
@@ -138,7 +138,7 @@ class LogScanner(threading.Thread):
 
         username = match.group(1)
         ip_address = match.group(2)
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
 
         if ip_address not in self.failed_attempts:
             self.failed_attempts[ip_address] = deque()

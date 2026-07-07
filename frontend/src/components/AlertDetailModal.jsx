@@ -113,6 +113,34 @@ export default function AlertDetailModal({ alert, onClose }) {
             <span>Detected at: {formatDatetime(alert.timestamp)}</span>
           </div>
 
+          {/* Threat Intelligence */}
+          {alert.threat_intel && (
+            <div className={`p-3 rounded-lg border ${
+              alert.threat_intel.threat_level === 'critical' ? 'bg-red-50 border-red-200' :
+              alert.threat_intel.threat_level === 'high' ? 'bg-orange-50 border-orange-200' :
+              alert.threat_intel.threat_level === 'medium' ? 'bg-yellow-50 border-yellow-200' :
+              'bg-gray-50 border-gray-200'
+            }`}>
+              <p className="text-xs font-semibold mb-1.5 flex items-center gap-1">
+                🌐 Threat Intelligence
+                <span className={`ml-auto px-1.5 py-0.5 rounded text-xs font-bold ${
+                  alert.threat_intel.threat_level === 'critical' ? 'bg-red-100 text-red-700' :
+                  alert.threat_intel.threat_level === 'high' ? 'bg-orange-100 text-orange-700' :
+                  alert.threat_intel.threat_level === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                  'bg-gray-100 text-gray-600'
+                }`}>
+                  {alert.threat_intel.threat_level?.toUpperCase()}
+                </span>
+              </p>
+              <div className="grid grid-cols-2 gap-1 text-xs text-gray-600">
+                <span>Abuse Score: <b>{alert.threat_intel.abuse_score ?? 0}%</b></span>
+                <span>ISP: {alert.threat_intel.isp || 'N/A'}</span>
+                {alert.threat_intel.is_tor && <span className="text-red-600 font-medium">⚠ TOR Exit Node</span>}
+                {alert.threat_intel.is_vpn && <span className="text-orange-600 font-medium">⚠ VPN/Proxy</span>}
+              </div>
+            </div>
+          )}
+
           {/* Notes */}
           {alert.notes && (
             <div className="p-3 bg-blue-50 rounded-lg">

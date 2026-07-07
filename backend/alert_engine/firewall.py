@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from backend.database.connection import get_db
 from backend.database.repository import BlacklistRepository
 from backend.api.auth import get_current_user_from_cookie, verify_csrf_token
@@ -52,7 +52,7 @@ async def manual_block(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Chỉ Admin mới có quyền chặn IP")
     if await fw_manager.block_ip(ip, reason):
-        expires_at = datetime.utcnow() + timedelta(minutes=duration_mins)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=duration_mins)
         BlacklistRepository.create(db, ip_address=ip, reason=reason, expires_at=expires_at, auto_blocked=False)
         return {"status": "success", "message": f"IP {ip} blocked"}
     raise HTTPException(status_code=500, detail="Failed to apply firewall rule")

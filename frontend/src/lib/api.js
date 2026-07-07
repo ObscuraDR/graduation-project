@@ -180,6 +180,11 @@ export async function lookupGeoIP(ip) {
   return res.data
 }
 
+export async function fetchIpReputation(ip) {
+  const res = await api.get(`/geoip/reputation/${encodeURIComponent(ip)}`)
+  return res.data
+}
+
 export async function fetchGeoAllow() {
   const res = await api.get('/geoallow/')
   return res.data
