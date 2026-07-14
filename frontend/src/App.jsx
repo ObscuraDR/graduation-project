@@ -13,7 +13,6 @@ import Firewall from './pages/Firewall';
 import ServerManagement from './pages/ServerManagement';
 import NotificationSettings from './pages/NotificationSettings';
 import ProfileSettings from './pages/ProfileSettings';
-import GeoBlocking from './pages/GeoBlocking';
 import UserManagement from './pages/UserManagement';
 import AuditLogs from './pages/AuditLogs';
 import LogViewer from './pages/LogViewer';
@@ -65,7 +64,7 @@ export default function App() {
                     <Route path="settings/profile"        element={<ProfileSettings />} />
                     <Route path="settings/notifications"  element={<NotificationSettings />} />
                     <Route path="settings/users"          element={<UserManagement />} />
-                    <Route path="geo-blocking"            element={<GeoBlocking />} />
+                    <Route path="geo-blocking"            element={<Navigate to="/firewall" replace />} />
                     <Route path="audit"                   element={<AuditLogs />} />
                     {/* Fallback */}
                     <Route path="*"                   element={<Navigate to="/" replace />} />

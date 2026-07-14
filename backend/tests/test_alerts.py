@@ -200,19 +200,19 @@ def test_severity_not_escalated_below_threshold() -> None:
 
     src_ip = "10.6.6.6"
     # Only 2 prior alerts — below the escalation threshold of 5
-    # Use non-DDoS/PortScan attack type to avoid type-specific escalation rules
+    # Use non-DDoS/PortScan/BruteForce attack type to avoid type-specific escalation rules
     for i in range(2):
         flow = _make_flow_info(src_ip=src_ip)
         flow["flow_key"] = f"{src_ip}:3000{i}-192.168.1.1:80"
         mgr.generate_alert(
-            _make_prediction(attack_type="BruteForce", severity="low"),
+            _make_prediction(attack_type="Botnet", severity="low"),
             flow,
         )
 
     flow3 = _make_flow_info(src_ip=src_ip)
     flow3["flow_key"] = f"{src_ip}:40000-192.168.1.1:80"
     alert = mgr.generate_alert(
-        _make_prediction(attack_type="BruteForce", severity="low"),
+        _make_prediction(attack_type="Botnet", severity="low"),
         flow3,
     )
 

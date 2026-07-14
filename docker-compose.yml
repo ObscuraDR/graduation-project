@@ -38,18 +38,18 @@ services:
     image: postgres:14-alpine
     container_name: ids-postgres
     environment:
-      POSTGRES_DB: ids_db
-      POSTGRES_USER: ids_user
-      POSTGRES_PASSWORD: ids_password
+      POSTGRES_DB: ${POSTGRES_DB:-ids_db}
+      POSTGRES_USER: ${POSTGRES_USER:-ids_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ids_password}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "5432:5432"
     networks:
       - ids-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ids_user -d ids_db"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5

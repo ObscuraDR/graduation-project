@@ -32,7 +32,14 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 
 import httpx
-import psutil
+
+# psutil optional — Android/Termux không hỗ trợ build
+try:
+    import psutil
+    _HAS_PSUTIL = True
+except ImportError:
+    psutil = None  # type: ignore
+    _HAS_PSUTIL = False
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -141,11 +148,15 @@ _COMMAND_FETCH_INTERVAL = 5.0       # Fetch lệnh mỗi 5 giây
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def get_system_stats() -> dict:
-    """Thu thập metrics hệ thống, xử lý gracefully khi thiếu quyền."""
+    """Thu thập metrics hệ thống, xử lý gracefully khi thiếu quyền hoặc thiếu psutil."""
     # CPU
-    try:
-        cpu = psutil.cpu_percent(interval=1)
-    except Exception:
+    cpu = 0.0
+    if _HAS_PSUTIL:
+        try:
+            cpu = psutil.cpu_percent(interval=1)
+        except Exception:
+            pass
+    if cpu == 0.0:
         try:
             with open('/proc/stat', 'r') as f:
                 line = f.readline()
@@ -156,9 +167,13 @@ def get_system_stats() -> dict:
             cpu = 0.0
 
     # RAM
-    try:
-        ram = psutil.virtual_memory().percent
-    except Exception:
+    ram = 0.0
+    if _HAS_PSUTIL:
+        try:
+            ram = psutil.virtual_memory().percent
+        except Exception:
+            pass
+    if ram == 0.0:
         try:
             with open('/proc/meminfo', 'r') as f:
                 lines = f.readlines()
@@ -174,12 +189,15 @@ def get_system_stats() -> dict:
             ram = 0.0
 
     # Disk
+    disk = 0.0
     disk_path = 'C:\\' if platform.system() == 'Windows' else '/'
-    try:
-        disk = psutil.disk_usage(disk_path).percent
-    except Exception:
+    if _HAS_PSUTIL:
         try:
-            import subprocess
+            disk = psutil.disk_usage(disk_path).percent
+        except Exception:
+            pass
+    if disk == 0.0:
+        try:
             out = subprocess.check_output(['df', '-h', '/'], text=True).splitlines()
             disk = float(out[1].split()[4].replace('%', '')) if len(out) > 1 else 0.0
         except Exception:
@@ -214,6 +232,27 @@ def compress_payload(payload: dict) -> bytes:
 # Format: {ip: expires_at_timestamp}
 _local_blocks: Dict[str, float] = {}
 LOCAL_AUTO_BLOCK_DURATION_HOURS = float(os.environ.get("AGENT_AUTO_BLOCK_HOURS", "1"))
+LOCAL_BLOCKS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "local_blocks.json")
+
+
+def _save_local_blocks_to_file():
+    try:
+        with open(LOCAL_BLOCKS_FILE, "w") as f:
+            json.dump(_local_blocks, f)
+    except Exception as e:
+        logger.error("Failed to save local blocks to file: %s", e)
+
+
+def _load_local_blocks_from_file():
+    global _local_blocks
+    if os.path.exists(LOCAL_BLOCKS_FILE):
+        try:
+            with open(LOCAL_BLOCKS_FILE, "r") as f:
+                data = json.load(f)
+                _local_blocks = {ip: float(expiry) for ip, expiry in data.items()}
+            logger.info("Loaded %d active local blocks from disk", len(_local_blocks))
+        except Exception as e:
+            logger.error("Failed to load local blocks from file: %s", e)
 
 
 def block_ip_local(ip: str, reason: str = "Remote command", duration_hours: float = None) -> bool:
@@ -222,7 +261,7 @@ def block_ip_local(ip: str, reason: str = "Remote command", duration_hours: floa
     Lưu vào _local_blocks để auto-unblock sau khi hết giờ.
     """
     dur = duration_hours if duration_hours is not None else LOCAL_AUTO_BLOCK_DURATION_HOURS
-    expires_at = time.monotonic() + dur * 3600
+    expires_at = time.time() + dur * 3600
     try:
         if platform.system() == "Linux":
             check = subprocess.run(
@@ -232,6 +271,7 @@ def block_ip_local(ip: str, reason: str = "Remote command", duration_hours: floa
             if check.returncode == 0:
                 logger.info("IP %s already blocked locally", ip)
                 _local_blocks[ip] = expires_at  # Refresh expiry
+                _save_local_blocks_to_file()
                 return True
 
             result = subprocess.run(
@@ -241,6 +281,7 @@ def block_ip_local(ip: str, reason: str = "Remote command", duration_hours: floa
             )
             if result.returncode == 0:
                 _local_blocks[ip] = expires_at
+                _save_local_blocks_to_file()
                 logger.info("Blocked %s locally for %.1fh: %s", ip, dur, reason)
                 return True
             else:
@@ -256,6 +297,7 @@ def block_ip_local(ip: str, reason: str = "Remote command", duration_hours: floa
             if check.returncode == 0:
                 logger.info("IP %s already blocked locally (Windows)", ip)
                 _local_blocks[ip] = expires_at
+                _save_local_blocks_to_file()
                 return True
 
             result = subprocess.run(
@@ -266,6 +308,7 @@ def block_ip_local(ip: str, reason: str = "Remote command", duration_hours: floa
             )
             if result.returncode == 0:
                 _local_blocks[ip] = expires_at
+                _save_local_blocks_to_file()
                 logger.info("Blocked %s locally for %.1fh: %s", ip, dur, reason)
                 return True
             else:
@@ -287,6 +330,7 @@ def unblock_ip_local(ip: str) -> bool:
             )
             if result.returncode == 0:
                 logger.info(f"Unblocked {ip} locally")
+                _save_local_blocks_to_file()
                 return True
             else:
                 logger.error(f"Failed to unblock {ip}: {result.stderr}")
@@ -300,6 +344,7 @@ def unblock_ip_local(ip: str) -> bool:
             )
             if result.returncode == 0:
                 logger.info(f"Unblocked {ip} locally")
+                _save_local_blocks_to_file()
                 return True
             else:
                 logger.error(f"Failed to unblock {ip}: {result.stderr}")
@@ -384,6 +429,97 @@ def scan_ssh_bruteforce(log_path: str) -> Optional[Dict]:
                 "log_source": "auth.log",
             }
 
+    return None
+
+
+def scan_windows_bruteforce() -> Optional[Dict]:
+    """
+    Phát hiện RDP/Windows logon brute force bằng cách quét Security Event Log (Event ID 4625).
+    Chỉ chạy trên Windows.
+    """
+    if platform.system() != "Windows":
+        return None
+    try:
+        # Lấy 30 log Audit Failure gần nhất dưới dạng XML
+        result = subprocess.run(
+            ["wevtutil", "qe", "Security", "/q:*[System[(EventID=4625)]]", "/c:30", "/f:xml", "/rd:true"],
+            capture_output=True, text=True, timeout=5, shell=True
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+
+        # wevtutil trả về các XML block nối tiếp nhau nhưng không bọc trong một root element chung.
+        # Chúng ta sẽ bao bọc chúng bằng <Events>...</Events> để parse.
+        xml_data = f"<Events>{result.stdout}</Events>"
+        
+        # Remove namespace definitions to make parsing simpler
+        xml_data = re.sub(r'xmlns="[^"]+"', '', xml_data)
+        
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(xml_data)
+        
+        now = datetime.now(timezone.utc)
+        window_start = now - timedelta(seconds=60)
+        new_failures: Dict[str, int] = defaultdict(int)
+        
+        for event in root.findall("Event"):
+            # Lấy timestamp
+            time_created = event.find(".//TimeCreated")
+            if time_created is None:
+                continue
+            sys_time = time_created.attrib.get("SystemTime")
+            if not sys_time:
+                continue
+            
+            try:
+                # Cắt bớt phần microsecond nếu quá dài để datetime.fromisoformat đọc được
+                clean_time = re.sub(r'\.\d+Z$', 'Z', sys_time)
+                # Thay Z thành +00:00
+                if clean_time.endswith('Z'):
+                    clean_time = clean_time[:-1] + "+00:00"
+                event_time = datetime.fromisoformat(clean_time)
+            except Exception:
+                continue
+                
+            # Chỉ xét các sự kiện trong vòng 60 giây qua
+            if event_time < window_start:
+                continue
+                
+            # Tìm IP Address và Username
+            ip = None
+            for data in event.findall(".//Data"):
+                name = data.attrib.get("Name")
+                if name == "IpAddress":
+                    ip = data.text
+                    break
+            
+            # Bỏ qua các địa chỉ local loopback hoặc rỗng
+            if ip and ip not in ("-", "127.0.0.1", "::1"):
+                _ssh_fail_tracker[ip].append(now)
+                new_failures[ip] += 1
+                
+        # Dọn dẹp entries cũ ngoài cửa sổ 60s
+        for ip in list(_ssh_fail_tracker.keys()):
+            _ssh_fail_tracker[ip] = [t for t in _ssh_fail_tracker[ip] if t >= window_start]
+            if not _ssh_fail_tracker[ip]:
+                del _ssh_fail_tracker[ip]
+                
+        # Kiểm tra vượt ngưỡng
+        for ip, timestamps in _ssh_fail_tracker.items():
+            count = len(timestamps)
+            if count >= SSH_FAIL_THRESHOLD:
+                logger.warning("Windows logon failure spike detected from %s: %d attempts/60s", ip, count)
+                return {
+                    "event_type": "windows_logon_brute_force",
+                    "source_ip": ip,
+                    "count": count,
+                    "severity": "high" if count < 20 else "critical",
+                    "message": f"Windows logon brute force: {count} failed attempts from {ip} in 60s",
+                    "log_source": "Security Event Log (4625)",
+                }
+    except Exception as e:
+        logger.debug("Error scanning Windows logon logs: %s", e)
+        
     return None
 
 
@@ -489,6 +625,8 @@ def scan_web_attacks(log_path: str) -> Optional[Dict]:
 
 def scan_network_anomaly() -> Optional[Dict]:
     """Phát hiện lượng kết nối SYN bất thường."""
+    if not _HAS_PSUTIL:
+        return None
     try:
         conns = psutil.net_connections(kind='tcp')
         syn_sent  = sum(1 for c in conns if c.status == 'SYN_SENT')
@@ -537,6 +675,19 @@ def collect_security_events(cpu: float, ram: float) -> List[Dict]:
             severity = ev.get("severity", "low")
             if src_ip and severity in ("high", "critical"):
                 logger.warning("[LOCAL RESPONSE] Auto-blocking %s (SSH brute force)", src_ip)
+                success = block_ip_local(src_ip, reason=f"Local auto-block: {ev['message']}")
+                ev["local_blocked"] = success
+                ev["local_action"] = "blocked" if success else "block_failed"
+
+    # 1b. Windows Logon brute force từ Security Event Log (Windows)
+    if platform.system() == "Windows":
+        ev = scan_windows_bruteforce()
+        if ev:
+            events.append(ev)
+            src_ip = ev.get("source_ip")
+            severity = ev.get("severity", "low")
+            if src_ip and severity in ("high", "critical"):
+                logger.warning("[LOCAL RESPONSE] Auto-blocking %s (Windows logon brute force)", src_ip)
                 success = block_ip_local(src_ip, reason=f"Local auto-block: {ev['message']}")
                 ev["local_blocked"] = success
                 ev["local_action"] = "blocked" if success else "block_failed"
@@ -621,7 +772,7 @@ def auto_unblock_check() -> int:
     Gọi định kỳ trong run_agent loop.
     Returns: số IP đã được unblock.
     """
-    now = time.monotonic()
+    now = time.time()
     expired = [ip for ip, exp in list(_local_blocks.items()) if now >= exp]
     unblocked = 0
     for ip in expired:
@@ -633,6 +784,7 @@ def auto_unblock_check() -> int:
             # Nếu unblock fail → thử lần sau
             logger.warning("Auto-unblock failed for %s, will retry", ip)
     if unblocked:
+        _save_local_blocks_to_file()
         logger.info("Auto-unblocked %d expired IPs", unblocked)
     return unblocked
 
@@ -668,6 +820,9 @@ async def run_agent() -> None:
     logger.info("Commands URL : %s/%s/commands", API_URL, SERVER_ID)
     logger.info("Metric interval: %ss | Log interval: %ss", INTERVAL, LOG_INTERVAL)
     logger.info("=" * 55)
+
+    # Nạp danh sách chặn cũ từ ổ đĩa nếu có
+    _load_local_blocks_from_file()
 
     if not SSL_VERIFY:
         logger.warning("SSL verification DISABLED — only use in private LAN")

@@ -118,12 +118,14 @@ def test_login_unknown_user(client_and_session) -> None:
 
 @pytest.mark.unit
 def test_me_requires_token(client_and_session) -> None:
+    client_and_session.cookies.clear()
     r = client_and_session.get("/api/auth/me")
     assert r.status_code == 401
 
 
 @pytest.mark.unit
 def test_me_rejects_garbage_token(client_and_session) -> None:
+    client_and_session.cookies.clear()
     r = client_and_session.get(
         "/api/auth/me", headers={"Authorization": "Bearer not.a.real.token"}
     )

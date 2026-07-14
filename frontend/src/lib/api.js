@@ -168,9 +168,9 @@ export async function fetchAuditLogs(params = {}) {
   return res.data
 }
 
-export async function fetchBlockHistory(limit = 100, ipAddress = null) {
-  const params = { limit }
-  if (ipAddress) params.ip_address = ipAddress
+export async function fetchBlockHistory({ limit = 100, skip = 0, ip_address = null } = {}) {
+  const params = { limit, skip }
+  if (ip_address) params.ip_address = ip_address
   const res = await api.get('/blacklist/history', { params })
   return res.data
 }
@@ -246,8 +246,8 @@ export async function removeWhitelist(data) {
 }
 
 // ─── Blacklist ────────────────────────────────────────────────────────────────
-export async function fetchBlacklist() {
-  const res = await api.get('/blacklist/')
+export async function fetchBlacklist(params = {}) {
+  const res = await api.get('/blacklist/', { params })
   return res.data
 }
 

@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Activity, RefreshCw, Play, Pause, Network, Filter, Zap } from 'lucide-react'
+import { Activity, RefreshCw, Play, Pause, Network, Filter, Zap, Radio, Square, ChevronDown } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell
 } from 'recharts'
 import { fetchActiveFlows, fetchTopTalkers, fetchTrafficStats } from '../lib/api'
+import api from '../lib/api'
+
+const API_KEY = import.meta.env.VITE_API_KEY || 'changeme-set-API_KEY-in-env'
 
 const PROTOCOL_COLORS = {
   tcp:     '#3b82f6',
@@ -32,6 +35,65 @@ export default function Traffic() {
   const [refreshInterval, setRefreshInterval] = useState(5)
   const [filterProto, setFilterProto] = useState('')
   const [trafficHistory, setTrafficHistory] = useState([])
+
+  // Sniffer control state
+  const [interfaces, setInterfaces] = useState([])
+  const [selectedIface, setSelectedIface] = useState('eth0')
+  const [snifferRunning, setSnifferRunning] = useState(false)
+  const [snifferLoading, setSnifferLoading] = useState(false)
+  const [snifferMsg, setSnifferMsg] = useState('')
+
+  // Load interfaces on mount
+  useEffect(() => {
+    api.get('/sniffer/interfaces', { headers: { 'X-API-Key': API_KEY } })
+      .then(r => {
+        const ifaces = r.data?.interfaces || []
+        setInterfaces(ifaces)
+        if (ifaces.length > 0 && !ifaces.includes(selectedIface)) {
+          setSelectedIface(ifaces[0])
+        }
+      })
+      .catch(() => setInterfaces(['eth0', 'enp0s3', 'lo']))
+  }, [])
+
+  // Check sniffer status
+  const checkSnifferStatus = async () => {
+    try {
+      const r = await api.get('/sniffer/status', { headers: { 'X-API-Key': API_KEY } })
+      setSnifferRunning(r.data?.is_running || false)
+    } catch {}
+  }
+
+  useEffect(() => { checkSnifferStatus() }, [])
+
+  const startSniffer = async () => {
+    setSnifferLoading(true)
+    setSnifferMsg('')
+    try {
+      const r = await api.post(
+        `/sniffer/start?interface=${selectedIface}&filter_expr=ip`,
+        null,
+        { headers: { 'X-API-Key': API_KEY } }
+      )
+      setSnifferRunning(true)
+      setSnifferMsg(`✅ Đang bắt gói tin trên ${selectedIface}`)
+    } catch (e) {
+      const detail = e.response?.data?.detail
+      const msg = typeof detail === 'object' ? detail?.error || JSON.stringify(detail) : detail
+      setSnifferMsg(`❌ ${msg || 'Lỗi khởi động sniffer'}`)
+    }
+    setSnifferLoading(false)
+  }
+
+  const stopSniffer = async () => {
+    setSnifferLoading(true)
+    try {
+      await api.post('/sniffer/stop', null, { headers: { 'X-API-Key': API_KEY } })
+      setSnifferRunning(false)
+      setSnifferMsg('⏹ Sniffer đã dừng')
+    } catch {}
+    setSnifferLoading(false)
+  }
 
   const loadData = async () => {
     setLoading(true)
@@ -135,6 +197,78 @@ export default function Traffic() {
             className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-300 hover:bg-slate-700 disabled:opacity-50">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
+        </div>
+      </div>
+
+      {/* ── Sniffer Control Panel ── */}
+      <div className={`rounded-xl border p-4 ${snifferRunning
+        ? 'bg-green-500/5 border-green-500/30'
+        : 'bg-slate-900/60 border-slate-800/60'}`}>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Icon + Label */}
+          <div className="flex items-center gap-2">
+            <Radio className={`w-5 h-5 ${snifferRunning ? 'text-green-400 animate-pulse' : 'text-slate-500'}`} />
+            <span className="text-sm font-semibold text-slate-300">Packet Sniffer</span>
+            {snifferRunning && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">
+                ĐANG CHẠY
+              </span>
+            )}
+          </div>
+
+          {/* Interface selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">Interface:</span>
+            <div className="relative">
+              <select
+                value={selectedIface}
+                onChange={e => setSelectedIface(e.target.value)}
+                disabled={snifferRunning}
+                className="appearance-none pl-3 pr-8 py-1.5 text-sm bg-slate-800 border border-slate-700 rounded-lg text-slate-200 disabled:opacity-50 cursor-pointer focus:ring-1 focus:ring-blue-500 outline-none"
+              >
+                {interfaces.length > 0
+                  ? interfaces.map(iface => (
+                      <option key={iface} value={iface}>{iface}</option>
+                    ))
+                  : <option value="eth0">eth0</option>
+                }
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Start / Stop button */}
+          {snifferRunning ? (
+            <button
+              onClick={stopSniffer}
+              disabled={snifferLoading}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 transition-all disabled:opacity-50"
+            >
+              <Square className="w-4 h-4" />
+              {snifferLoading ? 'Đang dừng...' : 'Dừng Sniffer'}
+            </button>
+          ) : (
+            <button
+              onClick={startSniffer}
+              disabled={snifferLoading}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 transition-all disabled:opacity-50"
+            >
+              <Play className="w-4 h-4" />
+              {snifferLoading ? 'Đang khởi động...' : 'Bắt đầu Sniffer'}
+            </button>
+          )}
+
+          {/* Message */}
+          {snifferMsg && (
+            <span className="text-xs text-slate-400 ml-1">{snifferMsg}</span>
+          )}
+
+          {/* Hint */}
+          {!snifferRunning && (
+            <span className="text-xs text-slate-600 ml-auto">
+              ⚠ Backend cần chạy với sudo để bắt gói tin thật
+            </span>
+          )}
         </div>
       </div>
 

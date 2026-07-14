@@ -33,7 +33,7 @@ export default function Overview() {
         fetchAlerts({ limit: 8 }),
       ])
       if (d.status === 'fulfilled') { setDashboard(d.value); _dashboardCache = d.value }
-      if (a.status === 'fulfilled') { setRecentAlerts(a.value); _recentAlertsCache = a.value }
+      if (a.status === 'fulfilled') { setRecentAlerts(a.value?.items || a.value || []); _recentAlertsCache = a.value?.items || a.value || [] }
       setIsRefreshing(false)
     }
 

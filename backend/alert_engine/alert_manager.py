@@ -310,6 +310,8 @@ class AlertManager:
     
     def _is_in_cooldown(self, ip_address: str) -> bool:
         """Check cooldown via Redis (falls back to in-memory if Redis unavailable)."""
+        if self.alert_cooldown <= 0:
+            return False
         cache = get_cache()
         if cache.is_connected():
             return cache.is_alert_in_cooldown(ip_address)
@@ -320,6 +322,8 @@ class AlertManager:
 
     def _update_alert_history(self, ip_address: str):
         """Record cooldown in Redis (and in-memory as fallback)."""
+        if self.alert_cooldown <= 0:
+            return
         cache = get_cache()
         if cache.is_connected():
             cache.set_alert_cooldown(ip_address, self.alert_cooldown)
@@ -476,10 +480,52 @@ class AlertManager:
     def add_to_blacklist(self, ip_address: str):
         self.blacklist.add(ip_address)
         logger.info(f"Added {ip_address} to blacklist")
+        
+        # Tự động đồng bộ hóa và phát lệnh chặn IP đến TẤT CẢ các máy chủ con (Agents)
+        try:
+            from backend.api.routes.servers import _firewall_commands
+            from backend.database.connection import SessionLocal
+            from backend.database.repository import ServerRepository
+            db = SessionLocal()
+            try:
+                servers = ServerRepository.get_all_servers(db)
+                for s in servers:
+                    _firewall_commands[s.id].append({
+                        "action": "block",
+                        "ip": ip_address,
+                        "reason": "Automatic global block synchronized from central manager",
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    })
+                logger.info(f"Broadcasted block command for {ip_address} to {len(servers)} servers")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Failed to broadcast block command for {ip_address}: {e}")
 
     def remove_from_blacklist(self, ip_address: str):
         self.blacklist.discard(ip_address)
         logger.info(f"Removed {ip_address} from blacklist")
+        
+        # Tự động phát lệnh gỡ chặn IP đến TẤT CẢ các máy chủ con (Agents)
+        try:
+            from backend.api.routes.servers import _firewall_commands
+            from backend.database.connection import SessionLocal
+            from backend.database.repository import ServerRepository
+            db = SessionLocal()
+            try:
+                servers = ServerRepository.get_all_servers(db)
+                for s in servers:
+                    _firewall_commands[s.id].append({
+                        "action": "unblock",
+                        "ip": ip_address,
+                        "reason": "Global unblock synchronized from central manager",
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    })
+                logger.info(f"Broadcasted unblock command for {ip_address} to {len(servers)} servers")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Failed to broadcast unblock command for {ip_address}: {e}")
 
     def get_blacklist(self) -> List[str]:
         return list(self.blacklist)
