@@ -61,6 +61,18 @@ def _reset_rate_limiter():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    """Wipe all cache entries before and after each test."""
+    try:
+        from backend.cache.redis_cache import get_cache
+        get_cache().clear_all()
+        yield
+        get_cache().clear_all()
+    except Exception:
+        yield
+
+
 # ── alert manager (no DB, no WebSocket) ──────────────────────────────────────
 
 @pytest.fixture

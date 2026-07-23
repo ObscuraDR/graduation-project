@@ -138,28 +138,7 @@ async def lifespan(app: FastAPI):
     anomaly_task = asyncio.create_task(anomaly_detection_task(interval_seconds=30))
     logger.info("Anomaly detection worker started.")
 
-    # Start background worker cho Log Cleanup (Tier 4 - TTL)
-    from backend.api.routes.servers import start_log_worker
-    await start_log_worker()
-    logger.info("Server log batch worker started.")
-
-    # Start periodic log cleanup task (delete logs older than 7 days)
-    async def log_cleanup_task(interval_seconds: int = 3600):
-        """Periodic cleanup of old security logs (Tier 4)."""
-        from backend.database.security_log_store import cleanup_old_logs
-        while True:
-            try:
-                await asyncio.sleep(interval_seconds)
-                deleted = cleanup_old_logs(ttl_days=7)
-                if deleted > 0:
-                    logger.info("Periodic log cleanup: deleted %d old logs", deleted)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error("Log cleanup task error: %s", e)
-
-    log_cleanup_task_instance = asyncio.create_task(log_cleanup_task(interval_seconds=3600))
-    logger.info("Log cleanup worker started (runs every 1 hour).")
+    # (log batch worker và security log cleanup đã được khởi động ở trên)
 
     # Start LogScanner for SSH brute-force detection (optional, env-gated)
     log_scanner = None
@@ -200,12 +179,7 @@ async def lifespan(app: FastAPI):
     # Stop anomaly detection worker
     anomaly_task.cancel()
 
-    # Stop log cleanup task
-    log_cleanup_task_instance.cancel()
-
-    # Stop log batch worker
-    from backend.api.routes.servers import stop_log_worker
-    await stop_log_worker()
+    # (stop_log_worker đã được gọi ở trên)
 
     if log_scanner is not None:
         log_scanner.stop()

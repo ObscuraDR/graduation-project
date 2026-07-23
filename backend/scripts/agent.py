@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 # ── Cấu hình ────────────────────────────────────────────────────────────────
-SERVER_ID    = int(os.environ.get("AGENT_SERVER_ID", 1))
+SERVER_ID    = int(os.environ.get("AGENT_SERVER_ID", 0))  # 0 = auto-register
 API_KEY      = os.environ.get("AGENT_API_KEY", "changeme-set-API_KEY-in-env")
 API_URL      = os.environ.get("IDS_API_URL", "http://localhost:8000/api/servers")
 INTERVAL     = int(os.environ.get("AGENT_INTERVAL_SECONDS", 10))
@@ -47,6 +47,9 @@ LOG_PATH     = os.environ.get("AGENT_LOG_PATH", "/var/log/auth.log")
 
 _ssl_env     = os.environ.get("AGENT_SSL_VERIFY", "true")
 SSL_VERIFY   = False if _ssl_env.lower() == "false" else True
+
+# Auto-register settings
+AUTO_REGISTER = SERVER_ID == 0
 
 
 def _detect_tailscale_url() -> str:
@@ -214,6 +217,27 @@ def compress_payload(payload: dict) -> bytes:
 # Format: {ip: expires_at_timestamp}
 _local_blocks: Dict[str, float] = {}
 LOCAL_AUTO_BLOCK_DURATION_HOURS = float(os.environ.get("AGENT_AUTO_BLOCK_HOURS", "1"))
+LOCAL_BLOCKS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "local_blocks.json")
+
+
+def _save_local_blocks_to_file():
+    try:
+        with open(LOCAL_BLOCKS_FILE, "w") as f:
+            json.dump(_local_blocks, f)
+    except Exception as e:
+        logger.error("Failed to save local blocks to file: %s", e)
+
+
+def _load_local_blocks_from_file():
+    global _local_blocks
+    if os.path.exists(LOCAL_BLOCKS_FILE):
+        try:
+            with open(LOCAL_BLOCKS_FILE, "r") as f:
+                data = json.load(f)
+                _local_blocks = {ip: float(expiry) for ip, expiry in data.items()}
+            logger.info("Loaded %d active local blocks from disk", len(_local_blocks))
+        except Exception as e:
+            logger.error("Failed to load local blocks from file: %s", e)
 
 
 def block_ip_local(ip: str, reason: str = "Remote command", duration_hours: float = None) -> bool:
@@ -222,7 +246,7 @@ def block_ip_local(ip: str, reason: str = "Remote command", duration_hours: floa
     Lưu vào _local_blocks để auto-unblock sau khi hết giờ.
     """
     dur = duration_hours if duration_hours is not None else LOCAL_AUTO_BLOCK_DURATION_HOURS
-    expires_at = time.monotonic() + dur * 3600
+    expires_at = time.time() + dur * 3600
     try:
         if platform.system() == "Linux":
             check = subprocess.run(
@@ -232,6 +256,7 @@ def block_ip_local(ip: str, reason: str = "Remote command", duration_hours: floa
             if check.returncode == 0:
                 logger.info("IP %s already blocked locally", ip)
                 _local_blocks[ip] = expires_at  # Refresh expiry
+                _save_local_blocks_to_file()
                 return True
 
             result = subprocess.run(
@@ -241,6 +266,7 @@ def block_ip_local(ip: str, reason: str = "Remote command", duration_hours: floa
             )
             if result.returncode == 0:
                 _local_blocks[ip] = expires_at
+                _save_local_blocks_to_file()
                 logger.info("Blocked %s locally for %.1fh: %s", ip, dur, reason)
                 return True
             else:
@@ -256,6 +282,7 @@ def block_ip_local(ip: str, reason: str = "Remote command", duration_hours: floa
             if check.returncode == 0:
                 logger.info("IP %s already blocked locally (Windows)", ip)
                 _local_blocks[ip] = expires_at
+                _save_local_blocks_to_file()
                 return True
 
             result = subprocess.run(
@@ -266,6 +293,7 @@ def block_ip_local(ip: str, reason: str = "Remote command", duration_hours: floa
             )
             if result.returncode == 0:
                 _local_blocks[ip] = expires_at
+                _save_local_blocks_to_file()
                 logger.info("Blocked %s locally for %.1fh: %s", ip, dur, reason)
                 return True
             else:
@@ -287,6 +315,7 @@ def unblock_ip_local(ip: str) -> bool:
             )
             if result.returncode == 0:
                 logger.info(f"Unblocked {ip} locally")
+                _save_local_blocks_to_file()
                 return True
             else:
                 logger.error(f"Failed to unblock {ip}: {result.stderr}")
@@ -300,6 +329,7 @@ def unblock_ip_local(ip: str) -> bool:
             )
             if result.returncode == 0:
                 logger.info(f"Unblocked {ip} locally")
+                _save_local_blocks_to_file()
                 return True
             else:
                 logger.error(f"Failed to unblock {ip}: {result.stderr}")
@@ -384,6 +414,97 @@ def scan_ssh_bruteforce(log_path: str) -> Optional[Dict]:
                 "log_source": "auth.log",
             }
 
+    return None
+
+
+def scan_windows_bruteforce() -> Optional[Dict]:
+    """
+    Phát hiện RDP/Windows logon brute force bằng cách quét Security Event Log (Event ID 4625).
+    Chỉ chạy trên Windows.
+    """
+    if platform.system() != "Windows":
+        return None
+    try:
+        # Lấy 30 log Audit Failure gần nhất dưới dạng XML
+        result = subprocess.run(
+            ["wevtutil", "qe", "Security", "/q:*[System[(EventID=4625)]]", "/c:30", "/f:xml", "/rd:true"],
+            capture_output=True, text=True, timeout=5, shell=True
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+
+        # wevtutil trả về các XML block nối tiếp nhau nhưng không bọc trong một root element chung.
+        # Chúng ta sẽ bao bọc chúng bằng <Events>...</Events> để parse.
+        xml_data = f"<Events>{result.stdout}</Events>"
+        
+        # Remove namespace definitions to make parsing simpler
+        xml_data = re.sub(r'xmlns="[^"]+"', '', xml_data)
+        
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(xml_data)
+        
+        now = datetime.now(timezone.utc)
+        window_start = now - timedelta(seconds=60)
+        new_failures: Dict[str, int] = defaultdict(int)
+        
+        for event in root.findall("Event"):
+            # Lấy timestamp
+            time_created = event.find(".//TimeCreated")
+            if time_created is None:
+                continue
+            sys_time = time_created.attrib.get("SystemTime")
+            if not sys_time:
+                continue
+            
+            try:
+                # Cắt bớt phần microsecond nếu quá dài để datetime.fromisoformat đọc được
+                clean_time = re.sub(r'\.\d+Z$', 'Z', sys_time)
+                # Thay Z thành +00:00
+                if clean_time.endswith('Z'):
+                    clean_time = clean_time[:-1] + "+00:00"
+                event_time = datetime.fromisoformat(clean_time)
+            except Exception:
+                continue
+                
+            # Chỉ xét các sự kiện trong vòng 60 giây qua
+            if event_time < window_start:
+                continue
+                
+            # Tìm IP Address và Username
+            ip = None
+            for data in event.findall(".//Data"):
+                name = data.attrib.get("Name")
+                if name == "IpAddress":
+                    ip = data.text
+                    break
+            
+            # Bỏ qua các địa chỉ local loopback hoặc rỗng
+            if ip and ip not in ("-", "127.0.0.1", "::1"):
+                _ssh_fail_tracker[ip].append(now)
+                new_failures[ip] += 1
+                
+        # Dọn dẹp entries cũ ngoài cửa sổ 60s
+        for ip in list(_ssh_fail_tracker.keys()):
+            _ssh_fail_tracker[ip] = [t for t in _ssh_fail_tracker[ip] if t >= window_start]
+            if not _ssh_fail_tracker[ip]:
+                del _ssh_fail_tracker[ip]
+                
+        # Kiểm tra vượt ngưỡng
+        for ip, timestamps in _ssh_fail_tracker.items():
+            count = len(timestamps)
+            if count >= SSH_FAIL_THRESHOLD:
+                logger.warning("Windows logon failure spike detected from %s: %d attempts/60s", ip, count)
+                return {
+                    "event_type": "windows_logon_brute_force",
+                    "source_ip": ip,
+                    "count": count,
+                    "severity": "high" if count < 20 else "critical",
+                    "message": f"Windows logon brute force: {count} failed attempts from {ip} in 60s",
+                    "log_source": "Security Event Log (4625)",
+                }
+    except Exception as e:
+        logger.debug("Error scanning Windows logon logs: %s", e)
+        
     return None
 
 
@@ -541,6 +662,19 @@ def collect_security_events(cpu: float, ram: float) -> List[Dict]:
                 ev["local_blocked"] = success
                 ev["local_action"] = "blocked" if success else "block_failed"
 
+    # 1b. Windows Logon brute force từ Security Event Log (Windows)
+    if platform.system() == "Windows":
+        ev = scan_windows_bruteforce()
+        if ev:
+            events.append(ev)
+            src_ip = ev.get("source_ip")
+            severity = ev.get("severity", "low")
+            if src_ip and severity in ("high", "critical"):
+                logger.warning("[LOCAL RESPONSE] Auto-blocking %s (Windows logon brute force)", src_ip)
+                success = block_ip_local(src_ip, reason=f"Local auto-block: {ev['message']}")
+                ev["local_blocked"] = success
+                ev["local_action"] = "blocked" if success else "block_failed"
+
     # 2. Web server attacks từ nginx/apache log
     for web_log in ["/var/log/nginx/access.log", "/var/log/apache2/access.log"]:
         if os.path.exists(web_log):
@@ -621,7 +755,7 @@ def auto_unblock_check() -> int:
     Gọi định kỳ trong run_agent loop.
     Returns: số IP đã được unblock.
     """
-    now = time.monotonic()
+    now = time.time()
     expired = [ip for ip, exp in list(_local_blocks.items()) if now >= exp]
     unblocked = 0
     for ip in expired:
@@ -633,6 +767,7 @@ def auto_unblock_check() -> int:
             # Nếu unblock fail → thử lần sau
             logger.warning("Auto-unblock failed for %s, will retry", ip)
     if unblocked:
+        _save_local_blocks_to_file()
         logger.info("Auto-unblocked %d expired IPs", unblocked)
     return unblocked
 
@@ -657,17 +792,78 @@ async def process_pending_commands(client: httpx.AsyncClient) -> None:
         logger.info(f"Successfully executed {executed}/{len(commands)} commands")
 
 
+# ── Auto-Register Function ─────────────────────────────────────────────────────
+
+async def auto_register_server(client: httpx.AsyncClient) -> int:
+    """
+    Tự động đăng ký server mới trong database nếu SERVER_ID=0.
+    Trả về ID của server đã tạo.
+    """
+    global SERVER_ID
+    
+    hostname = platform.node()
+    os_type = platform.system()
+    
+    # Lấy IP address local
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+    except:
+        local_ip = "unknown"
+    
+    server_data = {
+        "name": hostname,
+        "ip_address": local_ip,
+        "os": os_type,
+        "description": f"Auto-registered agent on {hostname}"
+    }
+    
+    try:
+        logger.info("Auto-registering new server: %s (IP: %s)", hostname, local_ip)
+        resp = await client.post(
+            API_URL,
+            json=server_data,
+            headers={"X-API-Key": API_KEY},
+            timeout=10.0
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        
+        # API có thể trả về {id: 1} hoặc {server_id: 1}
+        new_id = result.get("id") or result.get("server_id")
+        if new_id:
+            SERVER_ID = new_id
+            logger.info("✓ Server registered successfully! Assigned ID: %d", SERVER_ID)
+            return SERVER_ID
+        else:
+            logger.error("Failed to get server ID from response: %s", result)
+            return 0
+    except httpx.HTTPStatusError as e:
+        logger.error("HTTP error during auto-registration: %s", e.response.text[:200])
+        return 0
+    except Exception as e:
+        logger.error("Error during auto-registration: %s", e)
+        return 0
+
+
 # ── Main Agent Loop ───────────────────────────────────────────────────────────
 
 async def run_agent() -> None:
+    global _last_batch_send, _last_command_fetch, _events_queue, SERVER_ID
     logger.info("=" * 55)
     logger.info("Z-SENTINEL AGENT v2 STARTING")
-    logger.info("Server ID     : %s", SERVER_ID)
-    logger.info("Metrics URL   : %s/%s/status", API_URL, SERVER_ID)
-    logger.info("Logs URL      : %s/%s/logs", API_URL, SERVER_ID)
-    logger.info("Commands URL : %s/%s/commands", API_URL, SERVER_ID)
+    logger.info("Server ID     : %s", SERVER_ID if not AUTO_REGISTER else "auto-registering...")
+    logger.info("Metrics URL   : %s/%s/status", API_URL, SERVER_ID if not AUTO_REGISTER else "<pending>")
+    logger.info("Logs URL      : %s/%s/logs", API_URL, SERVER_ID if not AUTO_REGISTER else "<pending>")
+    logger.info("Commands URL : %s/%s/commands", API_URL, SERVER_ID if not AUTO_REGISTER else "<pending>")
     logger.info("Metric interval: %ss | Log interval: %ss", INTERVAL, LOG_INTERVAL)
     logger.info("=" * 55)
+
+    # Nạp danh sách chặn cũ từ ổ đĩa nếu có
+    _load_local_blocks_from_file()
 
     if not SSL_VERIFY:
         logger.warning("SSL verification DISABLED — only use in private LAN")
@@ -675,6 +871,14 @@ async def run_agent() -> None:
     last_log_scan = 0.0
 
     async with httpx.AsyncClient(verify=SSL_VERIFY, timeout=5.0) as client:
+        # Auto-register nếu SERVER_ID=0
+        if AUTO_REGISTER:
+            registered_id = await auto_register_server(client)
+            if registered_id == 0:
+                logger.error("Failed to auto-register server. Exiting.")
+                return
+            logger.info("Updated Server ID to: %d", SERVER_ID)
+        
         while True:
             loop_start = time.monotonic()
 

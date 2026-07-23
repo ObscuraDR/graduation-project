@@ -25,7 +25,6 @@ export default function Sidebar() {
     { to: '/settings/profile',       icon: User,   label: 'Tài khoản',         end: true },
     { to: '/audit',                  icon: History, label: 'Audit Log',         end: true, roles: ['admin'] },
     { to: '/settings/notifications', icon: Bell,   label: 'Thông báo',         end: true },
-    { to: '/geo-blocking',           icon: Globe,  label: 'Geo Blocking',      end: true, roles: ['admin'] },
     { to: '/settings/users',         icon: Users,  label: 'Quản lý User',      end: true, roles: ['admin'] },
   ];
 
