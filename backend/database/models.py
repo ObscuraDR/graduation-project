@@ -24,7 +24,7 @@ class User(Base):
 
 
 class TrafficFlow(Base):
-    """Traffic flow model for storing network flow data"""
+    """Lưu thông tin một flow mạng đã được gom nhóm từ packet capture."""
     __tablename__ = "traffic_flows"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -63,7 +63,7 @@ class TrafficFlow(Base):
 
 
 class FlowFeature(Base):
-    """Flow feature model for storing extracted ML features"""
+    """Lưu các đặc trưng đã trích xuất từ flow để dùng cho mô hình ML."""
     __tablename__ = "flow_features"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -98,7 +98,7 @@ class FlowFeature(Base):
 
 
 class AttackAlert(Base):
-    """Attack alert model for storing detected attacks"""
+    """Lưu cảnh báo phát hiện tấn công sau khi mô hình hoặc quy tắc cảnh báo kích hoạt."""
     __tablename__ = "attack_alerts"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -256,7 +256,7 @@ class GeoBlockRule(Base):
 
 
 class SecurityLog(Base):
-    """Model lưu trữ nhật ký bảo mật từ các cảm biến (Sniffer, LogScanner)"""
+    """Lưu các sự kiện bảo mật nhận được từ sniffer hoặc scanner log để dùng cho truy vấn và xem lịch sử."""
     __tablename__ = "security_logs"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -305,7 +305,7 @@ class Metric(Base):
 
 
 class AuditLog(Base):
-    """User action audit trail"""
+    """Ghi lại hành động của người dùng trong hệ thống để phục vụ kiểm toán và tra cứu."""
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)

@@ -1,6 +1,5 @@
 """
-MongoDB Flow Logger
-Logs flow summaries into the `flow_logs` collection.
+Flow logging helper for PostgreSQL-backed flow records.
 """
 
 import logging

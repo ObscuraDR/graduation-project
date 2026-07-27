@@ -12,10 +12,6 @@ POSTGRES_DB=ids_db
 POSTGRES_USER=ids_user
 POSTGRES_PASSWORD=ids_password
 
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-
 # API
 API_KEY=changeme  # Dùng cái này cho demo
 SECRET_KEY=your-secret-key-change-this-in-production
@@ -36,6 +32,7 @@ ENABLE_EMAIL_ALERTS=false
 ## 2. Khởi động Database
 
 ### PostgreSQL (BẮT BUỘC)
+
 ```bash
 # Dùng Docker
 docker-compose up -d postgres
@@ -44,9 +41,10 @@ docker-compose up -d postgres
 # Đảm bảo PostgreSQL đang chạy trên localhost:5432
 ```
 
-### Redis (KHÔNG CẦN)
-- Project dùng In-Memory Cache thay vì Redis thật
-- Không cần khởi động Redis
+### Cache (KHÔNG CẦN dịch vụ riêng)
+
+- Project dùng cache bộ nhớ trong thay vì Redis thật
+- Không cần khởi động Redis riêng
 
 ## 3. Khởi động Backend
 
@@ -56,6 +54,7 @@ python backend/main.py
 ```
 
 **Kiểm tra log:**
+
 - ✅ "Database initialized successfully"
 - ✅ "Server log batch worker started"
 - ✅ "Log cleanup worker started (runs every 1 hour)"
@@ -64,11 +63,13 @@ python backend/main.py
 ## 4. Test Backend Health
 
 Mở terminal mới:
+
 ```bash
 curl http://localhost:8000/health
 ```
 
 Phải trả về:
+
 ```json
 {
   "status": "healthy",
@@ -86,6 +87,7 @@ Phải trả về:
 ```
 
 **Kết quả mong đợi:**
+
 - ✅ Backend healthy
 - ✅ Test server created/exists
 - ✅ 25 events sent
@@ -95,6 +97,7 @@ Phải trả về:
 ## 6. Kiểm tra Backend Logs
 
 Trong terminal backend, bạn sẽ thấy:
+
 ```
 [DEBUG] AlertManager triggered for ssh_brute_force from 192.168.1.100
 [WARNING] Auto-blocking 192.168.1.100: 25 alerts in 60s
@@ -116,6 +119,7 @@ curl http://localhost:8000/api/logs?source_ip=192.168.1.100
 Nếu muốn demo với agent thật:
 
 ### 8.1 Tạo server trong DB
+
 ```bash
 curl -X POST http://localhost:8000/api/servers \
   -H "Content-Type: application/json" \
@@ -128,6 +132,7 @@ curl -X POST http://localhost:8000/api/servers \
 ```
 
 ### 8.2 Tạo file log giả cho agent
+
 ```bash
 # Tạo file với 25+ failed SSH
 cat > /tmp/agent_auth.log << 'EOF'
@@ -137,6 +142,7 @@ EOF
 ```
 
 ### 8.3 Chạy agent
+
 ```bash
 export AGENT_SERVER_ID=2  # ID của server vừa tạo
 export AGENT_API_KEY=changeme
@@ -148,6 +154,7 @@ python backend/scripts/agent.py
 ```
 
 Agent sẽ:
+
 - Đọc file log mỗi 30s
 - Phát hiện SSH brute force
 - Gửi batch events về backend
@@ -156,18 +163,23 @@ Agent sẽ:
 ## Xử lý lỗi thường gặp
 
 ### Lỗi: "Backend is not running"
+
 → Khởi động backend: `python backend/main.py`
 
 ### Lỗi: "Database connection failed"
+
 → Kiểm tra PostgreSQL đang chạy: `docker ps` hoặc `pg_isready`
 
-### Lỗi: "Redis connection failed"
-→ Kiểm tra Redis đang chạy: `redis-cli ping`
+### Lỗi: "Cache unavailable"
+
+→ Cache hiện dùng bộ nhớ trong, nên lỗi này thường không xảy ra; hãy kiểm tra log backend để xem lỗi khác
 
 ### Lỗi: "Failed to send events: 401"
+
 → Kiểm tra API_KEY trong script demo khớp với .env
 
 ### Lỗi: "IP not blocked"
+
 → Kiểm tra backend logs xem AlertManager có lỗi không
 → Có thể cần tăng số events (hiện tại 25, ngưỡng auto-block là 10 alerts trong 60s)
 
@@ -175,7 +187,7 @@ Agent sẽ:
 
 ```
 1. Cấu hình .env
-2. Khởi động PostgreSQL + Redis
+2. Khởi động PostgreSQL
 3. Khởi động Backend
 4. Chạy demo_firewall.ps1
 5. Kiểm tra IP bị block trong blacklist

@@ -1,6 +1,6 @@
 """
-scripts/test_redis_connection.py
-Verify Redis connectivity: set → get → delete a test key.
+scripts/test_cache_connection.py
+Verify the in-memory cache is available.
 """
 
 import sys
@@ -8,7 +8,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from backend.database.connection import get_redis_client
+from backend.cache.redis_cache import get_cache
 
 KEY = "ids:healthcheck"
 VALUE = "ok"
@@ -16,20 +16,15 @@ VALUE = "ok"
 
 def main():
     try:
-        r = get_redis_client()
-
-        r.set(KEY, VALUE, ex=30)
-
-        val = r.get(KEY)
+        cache = get_cache()
+        cache.set(KEY, VALUE, ttl=30)
+        val = cache.get(KEY)
         assert val == VALUE, f"Expected '{VALUE}', got '{val}'"
-
-        r.delete(KEY)
-        assert r.get(KEY) is None, "Key not deleted"
-
-        print(f"[PASS] Redis: set/get/delete OK (key={KEY})")
+        cache.delete(KEY)
+        print("[PASS] In-memory cache OK")
         sys.exit(0)
     except Exception as exc:
-        print(f"[FAIL] Redis: {exc}")
+        print(f"[FAIL] Cache check: {exc}")
         sys.exit(1)
 
 

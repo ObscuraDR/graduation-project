@@ -1,5 +1,5 @@
 """
-Centralized security log storage (PostgreSQL with JSONB).
+Centralized security log storage in PostgreSQL.
 """
 
 from __future__ import annotations

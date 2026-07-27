@@ -1,6 +1,5 @@
 """
-Database Connection
-PostgreSQL and MongoDB connection management
+Database connection management for PostgreSQL.
 """
 
 from sqlalchemy import create_engine
@@ -15,7 +14,8 @@ from backend.database.models import Base
 logger = logging.getLogger(__name__)
 
 
-# PostgreSQL connection
+# Tạo kết nối tới PostgreSQL một lần khi module được import.
+# Đây là nguồn dữ liệu chính cho toàn bộ hệ thống.
 engine = create_engine(
     f"postgresql://{settings.postgres_user}:{settings.postgres_password}"
     f"@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}",
@@ -30,7 +30,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def init_db():
-    """Initialize database tables"""
+    """Tạo các bảng trong PostgreSQL nếu chưa tồn tại."""
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
@@ -40,7 +40,7 @@ def init_db():
 
 
 def get_db() -> Session:
-    """Get database session (FastAPI dependency)"""
+    """Cung cấp một session database cho FastAPI mỗi khi có request cần truy vấn dữ liệu."""
     db = SessionLocal()
     try:
         yield db
@@ -68,6 +68,6 @@ def get_mongo_db():
 
 
 def close_connections():
-    """Close all database connections"""
+    """Đóng pool connection khi ứng dụng ngừng chạy hoặc cần cleanup."""
     engine.dispose()
     logger.info("PostgreSQL connection closed")

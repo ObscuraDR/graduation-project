@@ -22,7 +22,7 @@ async def list_security_logs(
     limit: int = Query(100, ge=1, le=500),
     skip: int = Query(0, ge=0),
 ):
-    """Search centralized security logs (MongoDB)."""
+    """Search centralized security logs stored in PostgreSQL."""
     return query_security_logs(
         source_ip=source_ip,
         event_type=event_type,

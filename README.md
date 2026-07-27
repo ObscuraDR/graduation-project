@@ -43,8 +43,8 @@ z-sentinel-ids/
 │   ├── detection_engine/          — ML inference + model loading
 │   ├── alert_engine/              — Alert generation & correlation
 │   ├── api/                       — HTTP routes, WebSocket, middleware
-│   ├── database/                  — PostgreSQL, MongoDB, Redis clients
-│   ├── cache/                     — Redis cache wrapper
+│   ├── database/                  — PostgreSQL data access and models
+│   ├── cache/                     — In-memory cache wrapper
 │   ├── notifications/             — Email service (SMTP)
 │   ├── monitoring/                — Prometheus metrics
 │   ├── ml/                        — ML training & XAI scripts
@@ -75,7 +75,7 @@ z-sentinel-ids/
 │
 ├── logs/                          ← Runtime logs (gitignored)
 │
-├── docker-compose.yml             — PostgreSQL + MongoDB + Redis + Backend + Dashboard + Nginx
+├── docker-compose.yml             — PostgreSQL + Backend + Dashboard + Nginx
 ├── Dockerfile                     — Backend image
 ├── requirements.txt               — Python dependencies
 ├── pytest.ini                     — Test configuration
@@ -85,6 +85,7 @@ z-sentinel-ids/
 ```
 
 **Nguyên tắc tổ chức:**
+
 - `backend/` chứa **TẤT CẢ** Python code, ML artifacts, data, scripts liên quan đến backend
 - `frontend/` chứa **TẤT CẢ** React code, không tương tác trực tiếp với filesystem backend
 - `docs/` chứa **TẤT CẢ** tài liệu (Markdown)
@@ -94,42 +95,42 @@ z-sentinel-ids/
 
 ## Tài liệu chính
 
-| Tài liệu | Đường dẫn | Khi nào đọc |
-|---|---|---|
-| **Engineering Rebuild Guide** | [`docs/ENGINEERING_REBUILD_GUIDE.md`](docs/ENGINEERING_REBUILD_GUIDE.md) | Hiểu sâu kiến trúc, debug bugs, refactor |
-| API Documentation | [`docs/api/API_DOCUMENTATION.md`](docs/api/API_DOCUMENTATION.md) | Tích hợp hoặc test API |
-| Commands | [`docs/operations/COMMANDS.md`](docs/operations/COMMANDS.md) | Tra cứu lệnh nhanh |
-| Deployment | [`docs/operations/DEPLOYMENT_GUIDE.md`](docs/operations/DEPLOYMENT_GUIDE.md) | Deploy production |
-| Demo Checklist | [`docs/thesis_reports/FINAL_DEMO_CHECKLIST.md`](docs/thesis_reports/FINAL_DEMO_CHECKLIST.md) | Buổi bảo vệ luận văn |
-| Training Guide | [`docs/machine_learning/CICIDS2017_TRAINING_GUIDE.md`](docs/machine_learning/CICIDS2017_TRAINING_GUIDE.md) | Train model từ CICIDS2017 |
+| Tài liệu                      | Đường dẫn                                                                                                  | Khi nào đọc                              |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| **Engineering Rebuild Guide** | [`docs/ENGINEERING_REBUILD_GUIDE.md`](docs/ENGINEERING_REBUILD_GUIDE.md)                                   | Hiểu sâu kiến trúc, debug bugs, refactor |
+| API Documentation             | [`docs/api/API_DOCUMENTATION.md`](docs/api/API_DOCUMENTATION.md)                                           | Tích hợp hoặc test API                   |
+| Commands                      | [`docs/operations/COMMANDS.md`](docs/operations/COMMANDS.md)                                               | Tra cứu lệnh nhanh                       |
+| Deployment                    | [`docs/operations/DEPLOYMENT_GUIDE.md`](docs/operations/DEPLOYMENT_GUIDE.md)                               | Deploy production                        |
+| Demo Checklist                | [`docs/thesis_reports/FINAL_DEMO_CHECKLIST.md`](docs/thesis_reports/FINAL_DEMO_CHECKLIST.md)               | Buổi bảo vệ luận văn                     |
+| Training Guide                | [`docs/machine_learning/CICIDS2017_TRAINING_GUIDE.md`](docs/machine_learning/CICIDS2017_TRAINING_GUIDE.md) | Train model từ CICIDS2017                |
 
 ---
 
 ## Tech Stack
 
-| Component | Technology |
-|---|---|
-| Backend | FastAPI 0.104 + Uvicorn (Python 3.10+) |
-| Frontend | React 18 + Vite + TailwindCSS + Recharts |
-| ML | scikit-learn, XGBoost, SHAP |
-| Databases | PostgreSQL 14, MongoDB 6, Redis 7 |
+| Component      | Technology                                  |
+| -------------- | ------------------------------------------- |
+| Backend        | FastAPI 0.104 + Uvicorn (Python 3.10+)      |
+| Frontend       | React 18 + Vite + TailwindCSS + Recharts    |
+| ML             | scikit-learn, XGBoost, SHAP                 |
+| Databases      | PostgreSQL 14                               |
 | Packet Capture | Scapy (Npcap on Windows / libpcap on Linux) |
-| Deployment | Docker Compose |
+| Deployment     | Docker Compose                              |
 
 ---
 
 ## API Endpoints (tóm tắt)
 
-| Method | Endpoint | Mô tả | Auth |
-|---|---|---|---|
-| POST | `/api/sniffer/start` | Start IDS pipeline | ✅ |
-| POST | `/api/sniffer/stop` | Stop pipeline | ✅ |
-| GET | `/api/sniffer/status` | Pipeline stats | ✅ |
-| GET | `/api/traffic/stats` | Traffic monitoring | ❌ |
-| GET | `/api/alerts/` | List alerts | ❌ |
-| POST | `/api/xai/explain` | SHAP explanation | ❌ |
-| GET | `/health/detailed` | Service health | ❌ |
-| WS | `/ws` | Real-time alerts | ❌ |
+| Method | Endpoint              | Mô tả              | Auth |
+| ------ | --------------------- | ------------------ | ---- |
+| POST   | `/api/sniffer/start`  | Start IDS pipeline | ✅   |
+| POST   | `/api/sniffer/stop`   | Stop pipeline      | ✅   |
+| GET    | `/api/sniffer/status` | Pipeline stats     | ✅   |
+| GET    | `/api/traffic/stats`  | Traffic monitoring | ❌   |
+| GET    | `/api/alerts/`        | List alerts        | ❌   |
+| POST   | `/api/xai/explain`    | SHAP explanation   | ❌   |
+| GET    | `/health/detailed`    | Service health     | ❌   |
+| WS     | `/ws`                 | Real-time alerts   | ❌   |
 
 ---
 
