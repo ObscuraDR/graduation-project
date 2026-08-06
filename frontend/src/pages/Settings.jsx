@@ -9,7 +9,7 @@ import {
 import { formatDatetime } from '../lib/datetime'
 import BlockIPModal from '../components/BlockIPModal'
 
-const TABS = ['Pipeline', 'Whitelist', 'Blacklist', 'Geo Block']
+const TABS = ['Whitelist', 'Blacklist', 'Geo Block']
 
 // Common country codes for quick-add
 const COMMON_COUNTRIES = [
@@ -19,7 +19,7 @@ const COMMON_COUNTRIES = [
 ]
 
 export default function Settings() {
-  const [tab, setTab] = useState('Pipeline')
+  const [tab, setTab] = useState('Whitelist')
   const [status, setStatus] = useState(null)
   const [health, setHealth] = useState(null)
   const [healthCheckedAt, setHealthCheckedAt] = useState(null)
@@ -144,7 +144,7 @@ export default function Settings() {
 
   return (
     <div className="p-6 space-y-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+      <h1 className="text-2xl font-bold text-gray-900">Cài đặt Nâng cao</h1>
 
       {message && (
         <div className={`p-3 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>

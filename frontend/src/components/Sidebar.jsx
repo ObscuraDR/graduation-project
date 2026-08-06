@@ -26,6 +26,7 @@ export default function Sidebar() {
     { to: '/audit',                  icon: History, label: 'Audit Log',         end: true, roles: ['admin'] },
     { to: '/settings/notifications', icon: Bell,   label: 'Thông báo',         end: true },
     { to: '/settings/users',         icon: Users,  label: 'Quản lý User',      end: true, roles: ['admin'] },
+    { to: '/settings/pipeline',      icon: Settings, label: 'Cài đặt Nâng cao', end: true, roles: ['admin'] },
   ];
 
   return (

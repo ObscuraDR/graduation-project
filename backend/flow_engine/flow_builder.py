@@ -218,6 +218,7 @@ class FlowBuilder:
         flow_expire_sec: int = 30,
         flow_max_lifetime_sec: int = 60,
         processed_flow_retention_sec: int = 45,
+        max_flows: int = 10000,
     ):
         """
         Args:
@@ -225,14 +226,19 @@ class FlowBuilder:
             flow_max_lifetime_sec: Remove flows older than this (absolute max age)
             processed_flow_retention_sec: Remove processed flows after this many seconds
                 since last prediction (frees memory)
+            max_flows: Hard cap on number of flows in RAM. When exceeded, the
+                least-recently-used flow is evicted (LRU) to prevent OOM during
+                SYN/UDP flood attacks.
         """
         self.flows: Dict[str, Flow] = {}
         self.flow_expire_sec = flow_expire_sec
         self.flow_max_lifetime_sec = flow_max_lifetime_sec
         self.processed_flow_retention_sec = processed_flow_retention_sec
+        self.max_flows = max_flows
         self.total_flows_created = 0
         self.total_flows_expired = 0
         self.total_processed_flows_removed = 0
+        self.total_lru_evicted = 0
 
     def _generate_flow_key(
         self,
@@ -260,6 +266,20 @@ class FlowBuilder:
         if flow_key in self.flows:
             flow = self.flows[flow_key]
         else:
+            # ── LRU eviction: nếu đã đạt max_flows, xóa flow ít được dùng nhất ──
+            if len(self.flows) >= self.max_flows:
+                lru_key = min(self.flows, key=lambda k: self.flows[k].last_seen)
+                evicted = self.flows.pop(lru_key)
+                self.total_lru_evicted += 1
+                logger.warning(
+                    "Flow table full (%d/%d) — LRU evicted flow %s (last_seen=%.1fs ago, packets=%d)",
+                    self.max_flows,
+                    self.max_flows,
+                    lru_key,
+                    (datetime.now(timezone.utc) - evicted.last_seen).total_seconds(),
+                    evicted.packet_count,
+                )
+
             flow = Flow(src_ip, dst_ip, src_port, dst_port, protocol)
             self.flows[flow_key] = flow
             self.total_flows_created += 1
@@ -274,10 +294,21 @@ class FlowBuilder:
     def get_active_flows(self) -> List[Flow]:
         return list(self.flows.values())
 
-    def cleanup_expired_flows(self) -> List[Flow]:
-        """Remove flows that are inactive, exceeded max lifetime, or processed past retention."""
+    def cleanup_expired_flows(self) -> tuple[List[Flow], List[Flow]]:
+        """
+        Remove flows that are inactive, exceeded max lifetime, or processed past retention.
+
+        Returns:
+            (removed_flows, pending_inference)
+            - removed_flows: all flows removed from the table
+            - pending_inference: subset of removed flows that were NOT yet processed
+              and had at least 1 packet — caller should run ML on these before
+              discarding (handles "orphan" flows from short port scans, dropped
+              connections, etc.)
+        """
         current_time = datetime.now(timezone.utc)
         removed_flows: List[Flow] = []
+        pending_inference: List[Flow] = []
         expired_keys: List[str] = []
 
         for flow_key, flow in self.flows.items():
@@ -304,10 +335,21 @@ class FlowBuilder:
                 self.total_flows_expired += 1
                 logger.debug("Expired flow %s (%s)", flow_key, reason)
 
+                # Flow mồ côi: timeout nhưng chưa qua ML và có ít nhất 1 gói tin
+                # → đưa vào pending_inference để coordinator ép phân loại trước khi xóa
+                if not flow.processed and flow.packet_count > 0:
+                    pending_inference.append(flow)
+                    logger.debug(
+                        "Orphan flow %s queued for forced inference (packets=%d, reason=%s)",
+                        flow_key,
+                        flow.packet_count,
+                        reason,
+                    )
+
         for key in expired_keys:
             del self.flows[key]
 
-        return removed_flows
+        return removed_flows, pending_inference
 
     def get_flows_by_source_ip(self, src_ip: str) -> List[Flow]:
         return [flow for flow in self.flows.values() if flow.src_ip == src_ip]
@@ -319,10 +361,12 @@ class FlowBuilder:
         processed_active = sum(1 for f in self.flows.values() if f.processed)
         return {
             "active_flows": len(self.flows),
+            "max_flows": self.max_flows,
             "processed_active_flows": processed_active,
             "total_flows_created": self.total_flows_created,
             "total_flows_expired": self.total_flows_expired,
             "total_processed_flows_removed": self.total_processed_flows_removed,
+            "total_lru_evicted": self.total_lru_evicted,
             "flow_expire_sec": self.flow_expire_sec,
             "flow_max_lifetime_sec": self.flow_max_lifetime_sec,
             "processed_flow_retention_sec": self.processed_flow_retention_sec,
@@ -341,6 +385,7 @@ def get_flow_builder(
     flow_expire_sec: int = 30,
     flow_max_lifetime_sec: int = 60,
     processed_flow_retention_sec: int = 45,
+    max_flows: int = 10000,
 ) -> FlowBuilder:
     global _flow_builder_instance
 
@@ -349,10 +394,12 @@ def get_flow_builder(
             flow_expire_sec=flow_expire_sec,
             flow_max_lifetime_sec=flow_max_lifetime_sec,
             processed_flow_retention_sec=processed_flow_retention_sec,
+            max_flows=max_flows,
         )
     else:
         _flow_builder_instance.flow_expire_sec = flow_expire_sec
         _flow_builder_instance.flow_max_lifetime_sec = flow_max_lifetime_sec
         _flow_builder_instance.processed_flow_retention_sec = processed_flow_retention_sec
+        _flow_builder_instance.max_flows = max_flows
 
     return _flow_builder_instance

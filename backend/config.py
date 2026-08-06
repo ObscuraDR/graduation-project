@@ -160,6 +160,7 @@ class Settings(BaseSettings):
     flow_expire_sec: int = 30  # inactive flow removal
     flow_max_lifetime_sec: int = 60  # max flow age regardless of activity
     processed_flow_retention_sec: int = 45  # remove processed flows after this
+    flow_max_capacity: int = 10000  # hard cap on flows in RAM (LRU eviction when exceeded)
 
     # Logging
     log_level: str = "INFO"

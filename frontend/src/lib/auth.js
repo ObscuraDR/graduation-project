@@ -36,6 +36,7 @@ export function setAuth(user, token) {
 export function clearAuth() {
   localStorage.removeItem(USER_KEY)
   localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem('ids_api_key')
 }
 
 export function isAuthenticated() {

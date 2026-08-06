@@ -1,3 +1,6 @@
+# TEST UPDATE 123456789
+
+
 """
 Z-Sentinel Agent v2
 ====================
@@ -132,13 +135,29 @@ SYN_CONN_THRESHOLD    = 100  # Số kết nối SYN cùng lúc → alert
 
 # ── State tracking ────────────────────────────────────────────────────────────
 _ssh_fail_tracker: Dict[str, List[datetime]] = defaultdict(list)
+_web_fail_tracker: Dict[str, List[datetime]] = defaultdict(list)
 _log_last_pos: Dict[str, int] = {}  # file path → last read position
 _events_queue: List[Dict] = []      # batch queue chưa gửi
 _last_batch_send: float = 0.0       # timestamp lần gửi batch cuối
-_BATCH_SEND_INTERVAL = 30.0         # Gom batch mỗi 30 giây (Tier 2)
+_BATCH_SEND_INTERVAL = 5.0          # Gom batch mỗi 5 giây (Tier 2)
 _command_queue: List[Dict] = []     # queue lệnh firewall từ trung tâm
 _last_command_fetch: float = 0.0    # timestamp lần fetch lệnh cuối
 _COMMAND_FETCH_INTERVAL = 5.0       # Fetch lệnh mỗi 5 giây
+_blocked_alert_ips: set = set()     # Track IPs đã gửi alert để tránh spam
+
+# Optional custom web access log paths, separated by ':' or ';'
+WEB_LOG_PATHS = [
+    path for path in re.split(r'[:;]', os.environ.get("AGENT_WEB_LOG_PATHS", "/var/log/nginx/access.log:/var/log/apache2/access.log"))
+    if path
+]
+
+# DVWA/web brute force detection thresholds
+WEB_ATTACK_SQLI_THRESHOLD = 3
+WEB_ATTACK_TRAVERSAL_THRESHOLD = 2
+WEB_ATTACK_HTTP_FLOOD_THRESHOLD = 50
+DVWA_HTTP_REQUEST_THRESHOLD = 50
+DVWA_LOGIN_FAIL_THRESHOLD = 5
+DVWA_LOGIN_FAIL_WINDOW_SECONDS = 60
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -531,57 +550,144 @@ def scan_cpu_spike(cpu: float, ram: float) -> Optional[Dict]:
     return None
 
 
+def _parse_access_log_line(line: str) -> Optional[Dict[str, Any]]:
+    """Parse dòng access log và trả về IP, method, path, status nếu có."""
+    # Apache combined log format: IP - - [timestamp] "METHOD PATH HTTP/1.x" STATUS size "referrer" "user-agent"
+    match = re.search(r'^(?P<ip>\d{1,3}(?:\.\d{1,3}){3})\s+[^\s]+\s+[^\s]+\s+\[[^\]]+\]\s+"(?P<method>GET|POST|PUT|DELETE|HEAD)\s+(?P<path>[^\s]+)\s+HTTP/\d\.\d"\s+(?P<status>\d{3})', line)
+    if not match:
+        return None
+    return {
+        "ip": match.group("ip"),
+        "method": match.group("method"),
+        "path": match.group("path"),
+        "status": int(match.group("status")),
+    }
+
+
 def scan_web_attacks(log_path: str) -> Optional[Dict]:
     """
     Phát hiện tấn công web từ nginx/apache access.log.
-    Phát hiện: SQL injection, path traversal, DDoS (nhiều request/IP).
-    Chỉ đọc dòng MỚI (incremental).
+    Phát hiện: DVWA brute force, SQL injection, path traversal, DDoS.
     """
+    logger.info("[scan_web_attacks] Scanning %s", log_path)
     new_lines = _read_new_lines(log_path)
     if not new_lines:
+        logger.info("[scan_web_attacks] No new lines in %s", log_path)
         return None
+    logger.info("[scan_web_attacks] Found %d new lines in %s", len(new_lines), log_path)
 
-    # Patterns tấn công web phổ biến
-    sqli_pattern    = re.compile(r"(union.*select|select.*from|drop.*table|insert.*into|'.*or.*'|1=1|--\s)", re.IGNORECASE)
+    sqli_pattern = re.compile(r"(union.*select|select.*from|drop.*table|insert.*into|'.*or.*'|1=1|--\s)", re.IGNORECASE)
     traversal_pattern = re.compile(r"\.\./|\.\.\\|%2e%2e|etc/passwd|etc/shadow", re.IGNORECASE)
-    ip_pattern      = re.compile(r'"?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"?')
-    status_pattern  = re.compile(r'" (\d{3}) ')
+    dvwa_login_path = re.compile(r"/dvwa/.*(login\.php|vulnerabilities/brute/|login\.php|brute)", re.IGNORECASE)
+
+    # sqli_ips: Dict[str, int] = defaultdict(int)
+    # traversal_ips: Dict[str, int] = defaultdict(int)
+    # error_ips: Dict[str, int] = defaultdict(int)
+    # dvwa_fail_ips: Dict[str, int] = defaultdict(int)
+    # dvwa_request_ips: Dict[str, int] = defaultdict(int)
+
 
     sqli_ips: Dict[str, int] = defaultdict(int)
     traversal_ips: Dict[str, int] = defaultdict(int)
-    error_ips: Dict[str, int] = defaultdict(int)  # 4xx/5xx
 
+    # Đếm tổng số request theo IP
+    request_ips: Dict[str, int] = defaultdict(int)
+
+    # Đếm lỗi HTTP
+    error_ips: Dict[str, int] = defaultdict(int)
+
+    dvwa_fail_ips: Dict[str, int] = defaultdict(int)
+    dvwa_request_ips: Dict[str, int] = defaultdict(int)
+
+
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(seconds=DVWA_LOGIN_FAIL_WINDOW_SECONDS)
+
+    parsed_count = 0
     for line in new_lines:
-        ip_m = ip_pattern.search(line)
-        if not ip_m:
+        parsed = _parse_access_log_line(line)
+        if not parsed:
             continue
-        ip = ip_m.group(1)
+
+        parsed_count += 1
+
+        # ip = parsed["ip"]
+        # path = parsed["path"]
+        # status = parsed["status"]
+
+        ip = parsed["ip"]
+        path = parsed["path"]
+        status = parsed["status"]
+
+        # Đếm mọi request từ IP
+        request_ips[ip] += 1
 
         if sqli_pattern.search(line):
             sqli_ips[ip] += 1
         if traversal_pattern.search(line):
             traversal_ips[ip] += 1
 
-        status_m = status_pattern.search(line)
-        if status_m and status_m.group(1).startswith(('4', '5')):
+        if status >= 400 and status < 600:
             error_ips[ip] += 1
 
-    # SQL Injection
+        if dvwa_login_path.search(path):
+            dvwa_request_ips[ip] += 1
+            if status in (401, 403):
+                _web_fail_tracker[ip].append(now)
+                dvwa_fail_ips[ip] += 1
+
+    logger.info("[scan_web_attacks] Parsed %d/%d lines, %d unique IPs", parsed_count, len(new_lines), len(request_ips))
+
+    logger.info("[scan_web_attacks] Starting HTTP flood detection...")
+    logger.info("[scan_web_attacks] request_ips: %s", dict(request_ips))
+    logger.info("[scan_web_attacks] _blocked_alert_ips: %s", _blocked_alert_ips)
+
+    # Dọn dẹp các IP DVWA cũ ngoài cửa sổ thời gian
+    for ip in list(_web_fail_tracker.keys()):
+        _web_fail_tracker[ip] = [t for t in _web_fail_tracker[ip] if t >= window_start]
+        if not _web_fail_tracker[ip]:
+            del _web_fail_tracker[ip]
+
+    for ip, timestamps in _web_fail_tracker.items():
+        count = len(timestamps)
+        if count >= DVWA_LOGIN_FAIL_THRESHOLD:
+            return {
+                "event_type": "web_brute_force",
+                "source_ip": ip,
+                "count": count,
+                "severity": "high" if count < 20 else "critical",
+                "message": f"DVWA login brute force detected from {ip}: {count} failed login attempts in {DVWA_LOGIN_FAIL_WINDOW_SECONDS}s",
+                "log_source": log_path,
+                "attack_type": "dvwa_login_brute_force",
+            }
+
+    # Nếu có nhiều request đến endpoint DVWA brute force payload trong thời gian ngắn
+    for ip, count in dvwa_request_ips.items():
+        if count >= DVWA_LOGIN_FAIL_THRESHOLD * 2:
+            return {
+                "event_type": "web_brute_force",
+                "source_ip": ip,
+                "count": count,
+                "severity": "medium",
+                "message": f"High DVWA request rate from {ip}: {count} DVWA-related requests",
+                "log_source": log_path,
+                "attack_type": "dvwa_request_flood",
+            }
+
     for ip, count in sqli_ips.items():
-        if count >= 3:
+        if count >= WEB_ATTACK_SQLI_THRESHOLD:
             return {
                 "event_type": "sql_injection",
                 "source_ip": ip,
                 "count": count,
                 "severity": "critical" if count >= 10 else "high",
-                "message": f"SQL injection attempts from {ip}: {count} requests in nginx log",
+                "message": f"SQL injection attempts from {ip}: {count} requests in access log",
                 "log_source": log_path,
                 "attack_type": "sql_injection",
             }
 
-    # Path Traversal
     for ip, count in traversal_ips.items():
-        if count >= 2:
+        if count >= WEB_ATTACK_TRAVERSAL_THRESHOLD:
             return {
                 "event_type": "path_traversal",
                 "source_ip": ip,
@@ -592,17 +698,69 @@ def scan_web_attacks(log_path: str) -> Optional[Dict]:
                 "attack_type": "path_traversal",
             }
 
-    # HTTP Flood (nhiều lỗi 4xx từ 1 IP)
-    for ip, count in error_ips.items():
-        if count >= 50:
+    # for ip, count in error_ips.items():
+    #     if count >= WEB_ATTACK_HTTP_FLOOD_THRESHOLD:
+    #         return {
+    #             "event_type": "http_flood",
+    #             "source_ip": ip,
+    #             "count": count,
+    #             "severity": "medium",
+    #             "message": f"HTTP flood from {ip}: {count} error responses",
+    #             "log_source": log_path,
+    #             "attack_type": "http_flood",
+    #         }
+    # ============================================================
+# HTTP Request Flood Detection
+# ============================================================
+
+    for ip, count in request_ips.items():
+        logger.info("[scan_web_attacks] IP %s: %d requests (threshold: %d)", ip, count, DVWA_HTTP_REQUEST_THRESHOLD)
+        # Skip nếu IP đã bị block trước đó (tránh spam alert)
+        if ip in _blocked_alert_ips:
+            logger.info("[scan_web_attacks] IP %s already blocked, skipping", ip)
+            continue
+
+        if count >= DVWA_HTTP_REQUEST_THRESHOLD:
+            severity = "medium"
+
+            if count >= 100:
+                severity = "high"
+
+            if count >= 300:
+                severity = "critical"
+
+            # Thêm IP vào danh sách đã block để tránh spam
+            _blocked_alert_ips.add(ip)
+
+            logger.info("[scan_web_attacks] HTTP flood detected from %s: %d requests (severity: %s)", ip, count, severity)
             return {
                 "event_type": "http_flood",
                 "source_ip": ip,
                 "count": count,
-                "severity": "medium",
-                "message": f"HTTP flood from {ip}: {count} error responses",
+                "severity": severity,
+                "message": (
+                    f"HTTP request flood detected from {ip}: "
+                    f"{count} requests during last scan"
+                ),
                 "log_source": log_path,
                 "attack_type": "http_flood",
+            }
+
+        if count >= 500:
+            # Thêm IP vào danh sách đã block
+            _blocked_alert_ips.add(ip)
+
+            return {
+                "event_type": "ddos_attack",
+                "source_ip": ip,
+                "count": count,
+                "severity": "critical",
+                "message": (
+                    f"Possible DDoS attack from {ip}: "
+                    f"{count} HTTP requests"
+                ),
+                "log_source": log_path,
+                "attack_type": "ddos"
             }
 
     return None
@@ -814,6 +972,30 @@ async def auto_register_server(client: httpx.AsyncClient) -> int:
     except:
         local_ip = "unknown"
     
+    # Bước 1: Kiểm tra xem IP đã tồn tại chưa
+    try:
+        logger.info("Checking if IP %s already registered...", local_ip)
+        list_url = API_URL.rstrip("/") + "/"
+        logger.info("List servers URL: %s", list_url)
+        list_resp = await client.get(
+            list_url,
+            headers={"X-API-Key": API_KEY},
+            timeout=10.0
+        )
+        if list_resp.status_code == 200:
+            servers = list_resp.json()
+            logger.info("Found %d existing servers", len(servers))
+            for server in servers:
+                if server.get("ip_address") == local_ip:
+                    SERVER_ID = server.get("id")
+                    logger.info("✓ IP already registered! Reusing Server ID: %d", SERVER_ID)
+                    return SERVER_ID
+        else:
+            logger.warning("Failed to list servers: HTTP %s", list_resp.status_code)
+    except Exception as e:
+        logger.debug("Error checking existing servers: %s", e)
+    
+    # Bước 2: Nếu IP chưa tồn tại, đăng ký mới
     server_data = {
         "name": hostname,
         "ip_address": local_ip,
@@ -823,11 +1005,15 @@ async def auto_register_server(client: httpx.AsyncClient) -> int:
     
     try:
         logger.info("Auto-registering new server: %s (IP: %s)", hostname, local_ip)
+        register_url = API_URL.rstrip("/") + "/"
+        logger.info("Register URL: %s", register_url)
+        
         resp = await client.post(
-            API_URL,
+            register_url,
             json=server_data,
             headers={"X-API-Key": API_KEY},
-            timeout=10.0
+            timeout=10.0,
+            follow_redirects=True
         )
         resp.raise_for_status()
         result = resp.json()
@@ -842,7 +1028,11 @@ async def auto_register_server(client: httpx.AsyncClient) -> int:
             logger.error("Failed to get server ID from response: %s", result)
             return 0
     except httpx.HTTPStatusError as e:
-        logger.error("HTTP error during auto-registration: %s", e.response.text[:200])
+        logger.error(
+            "HTTP %s during auto-registration: %s",
+            e.response.status_code,
+            e.response.text[:300],
+        )
         return 0
     except Exception as e:
         logger.error("Error during auto-registration: %s", e)
@@ -870,14 +1060,24 @@ async def run_agent() -> None:
 
     last_log_scan = 0.0
 
-    async with httpx.AsyncClient(verify=SSL_VERIFY, timeout=5.0) as client:
+    async with httpx.AsyncClient(verify=SSL_VERIFY, timeout=20.0) as client:
         # Auto-register nếu SERVER_ID=0
         if AUTO_REGISTER:
-            registered_id = await auto_register_server(client)
-            if registered_id == 0:
-                logger.error("Failed to auto-register server. Exiting.")
-                return
-            logger.info("Updated Server ID to: %d", SERVER_ID)
+            # Retry logic cho auto-register
+            max_retries = 3
+            retry_delay = 10
+            for attempt in range(max_retries):
+                registered_id = await auto_register_server(client)
+                if registered_id > 0:
+                    logger.info("Updated Server ID to: %d", SERVER_ID)
+                    break
+                else:
+                    if attempt < max_retries - 1:
+                        logger.warning("Auto-register failed (attempt %d/%d). Retrying in %ds...", attempt + 1, max_retries, retry_delay)
+                        await asyncio.sleep(retry_delay)
+                    else:
+                        logger.error("Failed to auto-register server after %d attempts. Exiting.", max_retries)
+                        return
         
         while True:
             loop_start = time.monotonic()

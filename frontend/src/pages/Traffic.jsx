@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react'
-import { Activity, RefreshCw, Play, Pause, Network, Filter, Zap } from 'lucide-react'
+import { useEffect, useState, useCallback } from 'react'
+import { Activity, RefreshCw, Play, Pause, Network, Filter, Zap, Radio, Square, ChevronDown } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell
 } from 'recharts'
-import { fetchActiveFlows, fetchTopTalkers, fetchTrafficStats } from '../lib/api'
+import {
+  fetchActiveFlows, fetchTopTalkers, fetchTrafficStats,
+  startSniffer, stopSniffer, fetchSnifferStatus, fetchInterfaces,
+} from '../lib/api'
 
 const PROTOCOL_COLORS = {
   tcp:     '#3b82f6',
@@ -33,8 +36,85 @@ export default function Traffic() {
   const [filterProto, setFilterProto] = useState('')
   const [trafficHistory, setTrafficHistory] = useState([])
 
-  const loadData = async () => {
-    setLoading(true)
+  // ── Sniffer controls ──────────────────────────────────────────────────────
+  const [snifferRunning, setSnifferRunning] = useState(false)
+  const [snifferLoading, setSnifferLoading] = useState(false)
+  const [snifferError, setSnifferError] = useState(null)
+  const [interfaces, setInterfaces] = useState([])
+  const [selectedIface, setSelectedIface] = useState('')
+
+  // Load available interfaces on mount
+  useEffect(() => {
+    fetchInterfaces()
+      .then(data => {
+        const ifaces = data.interfaces || []
+        setInterfaces(ifaces)
+        if (ifaces.length > 0) setSelectedIface(ifaces[0])
+      })
+      .catch(() => {})
+  }, [])
+
+  // Poll sniffer status every 5s
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const s = await fetchSnifferStatus()
+        setSnifferRunning(s.is_running === true)
+      } catch {}
+    }
+    poll()
+    const id = setInterval(poll, 5000)
+    return () => clearInterval(id)
+  }, [])
+
+  const handleStartSniffer = useCallback(async () => {
+    if (!selectedIface) return
+    setSnifferLoading(true)
+    setSnifferError(null)
+    try {
+      const res = await startSniffer({ interface: selectedIface })
+      if (res?.status === 'error') {
+        setSnifferError(res.message || 'Không thể khởi động sniffer')
+      } else {
+        setSnifferRunning(true)
+      }
+    } catch (err) {
+      const detail = err?.response?.data?.detail
+      if (typeof detail === 'object') {
+        setSnifferError(`Interface không hợp lệ. Các interface có sẵn: ${(detail.available_interfaces || []).join(', ')}`)
+      } else {
+        setSnifferError(detail || 'Không thể khởi động sniffer')
+      }
+    }
+    setSnifferLoading(false)
+  }, [selectedIface])
+
+  const handleStopSniffer = useCallback(async () => {
+    setSnifferLoading(true)
+    setSnifferError(null)
+    try {
+      const res = await stopSniffer()
+      // Backend trả 200 nhưng status:"error" khi không có sniffer đang chạy
+      if (res?.status === 'error') {
+        // Sniffer không chạy trên backend → đồng bộ lại state về false
+        setSnifferRunning(false)
+        setSnifferError(null) // không hiện lỗi vì đây là trạng thái đúng
+      } else {
+        setSnifferRunning(false)
+      }
+    } catch (err) {
+      // HTTP error → sync lại trạng thái thực từ backend
+      try {
+        const s = await fetchSnifferStatus()
+        setSnifferRunning(s.is_running === true)
+      } catch {}
+      setSnifferError(err?.response?.data?.detail || 'Không thể dừng sniffer')
+    }
+    setSnifferLoading(false)
+  }, [])
+
+  const loadData = async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const [flowsData, talkersData, statsData] = await Promise.all([
         fetchActiveFlows(200),
@@ -58,7 +138,7 @@ export default function Traffic() {
     } catch (err) {
       console.error('Failed to load traffic data:', err)
     }
-    setLoading(false)
+    if (!silent) setLoading(false)
   }
 
   useEffect(() => {
@@ -67,7 +147,8 @@ export default function Traffic() {
 
   useEffect(() => {
     if (!autoRefresh) return
-    const interval = setInterval(loadData, refreshInterval * 1000)
+    // silent=true để không gây flash UI khi auto-refresh nền
+    const interval = setInterval(() => loadData(true), refreshInterval * 1000)
     return () => clearInterval(interval)
   }, [autoRefresh, refreshInterval])
 
@@ -135,6 +216,63 @@ export default function Traffic() {
             className="p-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-300 hover:bg-slate-700 disabled:opacity-50">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
+        </div>
+      </div>
+
+      {/* Sniffer Control Panel */}
+      <div className={`rounded-xl border p-4 ${snifferRunning ? 'bg-green-950/30 border-green-700/40' : 'bg-slate-900/60 border-slate-800/60'}`}>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Status indicator */}
+          <div className="flex items-center gap-2 mr-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${snifferRunning ? 'bg-green-400 animate-pulse' : 'bg-slate-600'}`} />
+            <span className="text-sm font-semibold text-slate-200">
+              {snifferRunning ? 'Đang bắt gói tin' : 'Sniffer đang tắt'}
+            </span>
+          </div>
+
+          {/* Interface selector */}
+          <div className="flex items-center gap-2">
+            <ChevronDown className="w-4 h-4 text-slate-500" />
+            <select
+              value={selectedIface}
+              onChange={e => setSelectedIface(e.target.value)}
+              disabled={snifferRunning || snifferLoading}
+              className="px-3 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-300 disabled:opacity-50 max-w-xs"
+            >
+              {interfaces.length === 0
+                ? <option value="">Đang tải interface...</option>
+                : interfaces.map(iface => <option key={iface} value={iface}>{iface}</option>)
+              }
+            </select>
+          </div>
+
+          {/* Start / Stop button */}
+          {snifferRunning ? (
+            <button
+              onClick={handleStopSniffer}
+              disabled={snifferLoading}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 transition-colors"
+            >
+              <Square className="w-4 h-4" />
+              {snifferLoading ? 'Đang dừng...' : 'Dừng'}
+            </button>
+          ) : (
+            <button
+              onClick={handleStartSniffer}
+              disabled={snifferLoading || !selectedIface}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 transition-colors"
+            >
+              <Radio className="w-4 h-4" />
+              {snifferLoading ? 'Đang khởi động...' : 'Bắt đầu bắt gói tin'}
+            </button>
+          )}
+
+          {/* Error message */}
+          {snifferError && (
+            <span className="text-xs text-red-400 bg-red-950/40 border border-red-700/30 rounded-lg px-3 py-1.5 max-w-sm">
+              {snifferError}
+            </span>
+          )}
         </div>
       </div>
 

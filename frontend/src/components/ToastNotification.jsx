@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { X, AlertTriangle, ShieldAlert, ChevronRight } from 'lucide-react'
 import SeverityBadge from './SeverityBadge'
 import AlertDetailModal from './AlertDetailModal'
@@ -189,6 +190,7 @@ export default function ToastContainer({ alerts }) {
   const [detailAlert, setDetailAlert] = useState(null)
   const queueRef = useRef([])
   const processingRef = useRef(false)
+  const navigate = useNavigate()
 
   // Xử lý alerts mới từ WebSocket
   useEffect(() => {
@@ -277,7 +279,7 @@ export default function ToastContainer({ alerts }) {
   }
 
   const handleViewAll = () => {
-    window.location.href = '/alerts'
+    navigate('/alerts')
   }
 
   if (toasts.length === 0 && !detailAlert) return null

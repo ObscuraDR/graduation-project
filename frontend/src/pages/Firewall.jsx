@@ -6,7 +6,8 @@ import {
 import {
   fetchBlacklist, removeBlacklist, addBlacklistWithDuration, fetchBlockHistory,
   lookupGeoIP, fetchGeoAllow, fetchGeoWatch, addGeoAllow, removeGeoAllow,
-  addGeoWatch, removeGeoWatch, fetchGeoBlocks, addGeoBlock, removeGeoBlock
+  addGeoWatch, removeGeoWatch, fetchGeoBlocks, addGeoBlock, removeGeoBlock,
+  fetchWhitelist, addWhitelist, removeWhitelist,
 } from '../lib/api';
 import { hasRole } from '../lib/auth';
 import { formatDatetime } from '../lib/datetime';
@@ -148,7 +149,7 @@ const ALL_COUNTRIES = [
 ];
 
 export default function Firewall() {
-  const [tab, setTab] = useState('active'); // active, history, geo-blocking
+  const [tab, setTab] = useState('active'); // active, history, geo-blocking, whitelist
 
   // IP Blacklist state
   const [blacklist, setBlacklist] = useState([]);
@@ -160,6 +161,50 @@ export default function Firewall() {
   const [pageSize, setPageSize] = useState(50);
   const [totalBlacklist, setTotalBlacklist] = useState(0);
   const [totalHistory, setTotalHistory] = useState(0);
+
+  // Whitelist state
+  const [whitelist, setWhitelist] = useState([]);
+  const [newWlIp, setNewWlIp] = useState('');
+  const [newWlReason, setNewWlReason] = useState('');
+  const [wlLoading, setWlLoading] = useState(false);
+  const [wlMessage, setWlMessage] = useState({ type: '', text: '' });
+
+  const flashWlMessage = useCallback((type, text) => {
+    setWlMessage({ type, text });
+    setTimeout(() => setWlMessage({ type: '', text: '' }), 3000);
+  }, []);
+
+  const loadWhitelist = useCallback(async () => {
+    try {
+      const res = await fetchWhitelist();
+      setWhitelist(res.data?.items || res.items || res.data || []);
+    } catch { }
+  }, []);
+
+  const handleAddWhitelist = async () => {
+    if (!newWlIp.trim()) return;
+    setWlLoading(true);
+    try {
+      await addWhitelist({ ip_address: newWlIp.trim(), reason: newWlReason || 'Added from Firewall' });
+      setNewWlIp(''); setNewWlReason('');
+      loadWhitelist();
+      flashWlMessage('success', `Đã thêm ${newWlIp} vào whitelist`);
+    } catch (err) {
+      flashWlMessage('error', err.response?.data?.message || err.response?.data?.detail || 'Không thể thêm IP');
+    }
+    setWlLoading(false);
+  };
+
+  const handleRemoveWhitelist = async (id, ip) => {
+    if (!window.confirm(`Xóa ${ip} khỏi whitelist?`)) return;
+    try {
+      await removeWhitelist({ whitelist_id: id });
+      loadWhitelist();
+      flashWlMessage('success', `Đã xóa ${ip} khỏi whitelist`);
+    } catch (err) {
+      flashWlMessage('error', err.response?.data?.detail || 'Không thể xóa IP');
+    }
+  };
 
   // Geo Blocking state
   const [geoRules, setGeoRules] = useState([]);
@@ -310,8 +355,10 @@ export default function Firewall() {
         fetchGeoAllow().then(setAllowRules).catch(() => {});
         fetchGeoWatch().then(setWatchRules).catch(() => {});
       }
+    } else if (tab === 'whitelist') {
+      loadWhitelist();
     }
-  }, [currentPage, pageSize, tab, loadGeoBlocks]);
+  }, [currentPage, pageSize, tab, loadGeoBlocks, loadWhitelist]);
 
   const handleLookup = async () => {
     if (!lookupIp.trim()) return;
@@ -367,6 +414,7 @@ export default function Firewall() {
           { id: 'active', label: 'IP Đang chặn', count: totalBlacklist },
           { id: 'history', label: 'Lịch sử block IP', icon: History },
           { id: 'geo-blocking', label: 'Chặn Quốc gia (Geo)', icon: Globe },
+          { id: 'whitelist', label: 'Whitelist', icon: Shield },
         ].map(({ id, label, icon: Icon, count }) => (
           <button
             key={id}
@@ -729,6 +777,87 @@ export default function Firewall() {
             </div>
           )}
         </>
+      )}
+
+      {/* Tab: Whitelist */}
+      {tab === 'whitelist' && (
+        <div className="space-y-4">
+          {/* Toast */}
+          {wlMessage.text && (
+            <div className={`p-3 rounded-lg text-sm flex items-center gap-2 border ${
+              wlMessage.type === 'success'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : 'bg-red-500/10 border-red-500/30 text-red-400'
+            }`}>
+              {wlMessage.text}
+            </div>
+          )}
+
+          {/* Add form */}
+          {canManage && (
+            <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-800/60 rounded-xl p-4">
+              <h2 className="text-sm font-semibold text-slate-200 mb-3 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-emerald-400" /> Thêm IP vào Whitelist
+              </h2>
+              <div className="flex gap-2">
+                <input
+                  value={newWlIp}
+                  onChange={(e) => setNewWlIp(e.target.value)}
+                  placeholder="192.168.1.100"
+                  className="w-44 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono text-sm focus:outline-none focus:border-emerald-500 transition-colors"
+                />
+                <input
+                  value={newWlReason}
+                  onChange={(e) => setNewWlReason(e.target.value)}
+                  placeholder="Lý do (tuỳ chọn)"
+                  className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-sm focus:outline-none focus:border-emerald-500 transition-colors"
+                />
+                <button
+                  onClick={handleAddWhitelist}
+                  disabled={wlLoading || !newWlIp.trim()}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  <Plus className="w-4 h-4" /> Thêm
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Whitelist table */}
+          <div className="bg-slate-900/60 backdrop-blur-sm rounded-xl border border-slate-800/60 overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-slate-800/80 border-b border-slate-700/60">
+                <tr>
+                  <th className={thClass}>IP Address</th>
+                  <th className={thClass}>Lý do</th>
+                  <th className={thClass}>Ngày thêm</th>
+                  {canManage && <th className={`${thClass} text-right`}>Thao tác</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {whitelist.length === 0 ? (
+                  <tr><td colSpan={4} className="px-4 py-10 text-center text-slate-600">Chưa có IP nào trong whitelist</td></tr>
+                ) : whitelist.map((item) => (
+                  <tr key={item.id} className="hover:bg-slate-800/40 transition-colors">
+                    <td className={`${tdClass} font-mono text-emerald-400`}>{item.ip_address}</td>
+                    <td className={`${tdClass} text-slate-400`}>{item.reason || '—'}</td>
+                    <td className={`${tdClass} text-slate-500 text-xs`}>{formatDatetime(item.created_at)}</td>
+                    {canManage && (
+                      <td className={`${tdClass} text-right`}>
+                        <button
+                          onClick={() => handleRemoveWhitelist(item.id, item.ip_address)}
+                          className="p-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded border border-red-500/20 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {/* Block IP Modal */}

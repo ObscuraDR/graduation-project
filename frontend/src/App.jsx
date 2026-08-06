@@ -19,6 +19,7 @@ import LogViewer from './pages/LogViewer';
 import AIInsights from './pages/AIInsights';
 import Traffic from './pages/Traffic';
 import Reports from './pages/Reports';
+import Settings from './pages/Settings';
 
 export default function App() {
   const [liveAlerts, setLiveAlerts] = useState([])
@@ -64,6 +65,7 @@ export default function App() {
                     <Route path="settings/profile"        element={<ProfileSettings />} />
                     <Route path="settings/notifications"  element={<NotificationSettings />} />
                     <Route path="settings/users"          element={<UserManagement />} />
+                    <Route path="settings/pipeline"       element={<Settings />} />
                     <Route path="geo-blocking"            element={<Navigate to="/firewall" replace />} />
                     <Route path="audit"                   element={<AuditLogs />} />
                     {/* Fallback */}

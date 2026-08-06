@@ -31,12 +31,13 @@ export default function ServerManagement() {
 
   useEffect(() => {
     fetchServers();
-    const intervalId = setInterval(fetchServers, 10000);
+    // silent=true để không flash loading khi auto-refresh nền
+    const intervalId = setInterval(() => fetchServers(true), 10000);
     return () => clearInterval(intervalId);
   }, []);
 
-  const fetchServers = async () => {
-    setLoading(true);
+  const fetchServers = async (silent = false) => {
+    if (!silent) setLoading(true);
     setError('');
     try {
       const response = await axios.get('/api/servers');
@@ -54,7 +55,7 @@ export default function ServerManagement() {
     } catch (err) {
       setError('Không thể tải danh sách máy chủ.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 

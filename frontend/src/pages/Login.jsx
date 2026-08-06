@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { Shield, Lock, User, Loader2 } from 'lucide-react'
-import { loginRequest, fetchMe } from '../lib/api'
+import { loginRequest, fetchMe, fetchAndStoreApiKey } from '../lib/api'
 import { setAuth } from '../lib/auth'
 
 export default function Login() {
@@ -28,6 +28,7 @@ export default function Login() {
       const loginResponse = await loginRequest(username.trim(), password)
       const user = await fetchMe()
       setAuth(user, loginResponse.access_token || loginResponse.token)
+      await fetchAndStoreApiKey()
       navigate(from, { replace: true })
     } catch (err) {
       if (err.response?.status === 403) {

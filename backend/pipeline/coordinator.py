@@ -84,6 +84,7 @@ class PipelineCoordinator:
         self.skipped_already_processed = 0
         self.skipped_below_min_packets = 0
         self.cleanup_runs = 0
+        self.orphan_inference_runs = 0
 
     def initialize(self) -> None:
         logger.info("Initializing IDS pipeline components...")
@@ -110,6 +111,7 @@ class PipelineCoordinator:
             flow_expire_sec=self.flow_expire_sec,
             flow_max_lifetime_sec=self.flow_max_lifetime_sec,
             processed_flow_retention_sec=self.processed_flow_retention_sec,
+            max_flows=settings.flow_max_capacity,
         )
         self.feature_extractor = get_feature_extractor()
         self.predictor = get_predictor(model_loader=model_loader)
@@ -159,6 +161,42 @@ class PipelineCoordinator:
             )
         return True
 
+    def _run_forced_inference(self, flow) -> None:
+        """
+        Ép phân loại ML cho flow mồ côi (timeout trước khi đủ min_packets).
+        Gọi từ cleanup để không bỏ sót các port scan ngắn, kết nối bị đứt giữa chừng.
+        """
+        try:
+            features = self.feature_extractor.extract_features(flow)
+            prediction = self.predictor.predict_flow(flow)
+            flow.mark_inference_complete()
+            self.inference_runs += 1
+            self.orphan_inference_runs += 1
+
+            if self.predictor.is_attack(prediction):
+                flow_id = self._save_flow_to_db(flow, features)
+                log_flow_summary(flow_id, flow.get_stats(), features)
+                alert = self.alert_manager.generate_alert(
+                    prediction,
+                    flow.get_stats(),
+                    flow_id=flow_id,
+                )
+                if alert:
+                    logger.warning(
+                        "ORPHAN FLOW ALERT: %s from %s (severity: %s, packets=%d, flow=%s)",
+                        alert["attack_type"],
+                        alert["src_ip"],
+                        alert["severity"],
+                        flow.packet_count,
+                        flow.flow_key,
+                    )
+        except Exception as exc:
+            logger.error(
+                "Error during forced inference on orphan flow %s: %s",
+                flow.flow_key,
+                exc,
+            )
+
     def packet_callback(self, packet_info: dict) -> None:
         self.processed_packets += 1
 
@@ -168,8 +206,10 @@ class PipelineCoordinator:
 
         if self._should_skip_inference(flow):
             if self.processed_packets % 500 == 0:
-                self.flow_builder.cleanup_expired_flows()
+                _, orphans = self.flow_builder.cleanup_expired_flows()
                 self.cleanup_runs += 1
+                for orphan in orphans:
+                    self._run_forced_inference(orphan)
             return
 
         try:
@@ -197,10 +237,12 @@ class PipelineCoordinator:
                     )
 
             if self.inference_runs % 50 == 0:
-                removed = self.flow_builder.cleanup_expired_flows()
+                _, orphans = self.flow_builder.cleanup_expired_flows()
                 self.cleanup_runs += 1
-                if removed:
-                    logger.debug("Cleaned up %s expired/processed flows", len(removed))
+                if orphans:
+                    logger.debug("Forced inference on %d orphan flows", len(orphans))
+                    for orphan in orphans:
+                        self._run_forced_inference(orphan)
 
         except Exception as exc:
             logger.error("Error processing flow %s: %s", flow.flow_key, exc)
@@ -244,7 +286,12 @@ class PipelineCoordinator:
             self.sniffer.stop()
         self.is_running = False
         if self.flow_builder:
-            self.flow_builder.cleanup_expired_flows()
+            # Khi stop: ép inference tất cả flow mồ côi còn lại trước khi xóa
+            _, orphans = self.flow_builder.cleanup_expired_flows()
+            if orphans:
+                logger.info("Stop: forcing inference on %d remaining orphan flows", len(orphans))
+                for orphan in orphans:
+                    self._run_forced_inference(orphan)
         logger.info("IDS pipeline stopped")
 
     def get_stats(self) -> dict:
@@ -264,6 +311,7 @@ class PipelineCoordinator:
             "skipped_already_processed": self.skipped_already_processed,
             "skipped_below_min_packets": self.skipped_below_min_packets,
             "cleanup_runs": self.cleanup_runs,
+            "orphan_inference_runs": self.orphan_inference_runs,
             "sniffer_stats": self.sniffer.get_stats() if self.sniffer else {},
             "flow_builder_stats": self.flow_builder.get_stats() if self.flow_builder else {},
             "predictor_stats": self.predictor.get_stats() if self.predictor else {},

@@ -1,4 +1,6 @@
 import asyncio
+import gzip
+import json
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional, Dict
@@ -94,10 +96,23 @@ async def _log_batch_worker(batch_size: int = 20, flush_interval: float = 5.0):
                         source_ip = event.get("source_ip")
                         severity = event.get("severity", "low")
 
-                        if source_ip and event_type in ["ssh_brute_force", "cpu_spike", "ram_spike", "syn_flood_inbound", "syn_flood_outbound"]:
+                        if source_ip and event_type in [
+                            "ssh_brute_force",
+                            "ssh_login_failed",
+                            "windows_logon_brute_force",
+                            "web_brute_force",
+                            "cpu_spike",
+                            "ram_spike",
+                            "syn_flood_inbound",
+                            "syn_flood_outbound",
+                            "http_flood",
+                            "ddos_attack",
+                            "sql_injection",
+                            "path_traversal",
+                        ]:
                             # Tạo prediction dict cho AlertManager
                             prediction = {
-                                "attack_type": event_type,
+                                "attack_type": "BruteForce" if event_type in ["ssh_brute_force", "ssh_login_failed", "windows_logon_brute_force", "web_brute_force"] else event_type,
                                 "confidence": 0.9 if severity == "critical" else (0.8 if severity == "high" else 0.7),
                                 "severity": severity,
                             }
@@ -298,17 +313,33 @@ class FirewallCommand(BaseModel):
 @router.post("/{server_id}/logs")
 async def receive_agent_logs(
     server_id: int,
-    payload: AgentLogPayload,
+    request: Request,
     api_key: str = Depends(verify_api_key)
 ):
     """
     Endpoint để agent gửi security events.
-    Nhận vào queue async → batch insert vào DB để tránh overload.
+    Chấp nhận cả JSON thuần và gzip JSON từ agent.
     """
-    # Validate server_id matches payload
+    raw_body = await request.body()
+    content_type = request.headers.get("content-type", "")
+    content_encoding = request.headers.get("content-encoding", "")
+
+    if content_encoding.lower() == "gzip":
+        try:
+            raw_body = gzip.decompress(raw_body)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"invalid gzip payload: {exc}") from exc
+
+    try:
+        payload = AgentLogPayload.model_validate_json(raw_body.decode("utf-8"))
+    except Exception as exc:
+        if content_type.startswith("application/json") or not raw_body:
+            raise HTTPException(status_code=400, detail=f"invalid json payload: {exc}") from exc
+        raise HTTPException(status_code=400, detail="invalid payload") from exc
+
     if payload.server_id != server_id:
         raise HTTPException(status_code=400, detail="server_id mismatch")
-    
+
     # Get server name for logging
     from backend.database.repository import ServerRepository
     from backend.database.connection import get_db
@@ -320,11 +351,10 @@ async def receive_agent_logs(
     finally:
         db.close()
     
-    # Put events into async queue for batch processing
     event_count = 0
     for event in payload.events:
         try:
-            await _log_queue.put({
+            queue_item = {
                 "server": server_name,
                 "server_id": server_id,
                 "source_ip": event.get("source_ip"),
@@ -333,11 +363,43 @@ async def receive_agent_logs(
                 "log_source": event.get("log_source", "agent"),
                 "count": event.get("count"),
                 "severity": event.get("severity"),
-            })
+            }
+            await _log_queue.put(queue_item)
             event_count += 1
+
+            # Trigger alert manager for web-related, SSH, logon, and high/medium-severity events even if the
+            # event batch worker hasn't flushed yet, so dashboard updates immediately.
+            if queue_item.get("event_type") in {
+                "http_flood",
+                "ddos_attack",
+                "sql_injection",
+                "path_traversal",
+                "web_brute_force",
+                "ssh_brute_force",
+                "ssh_login_failed",
+                "windows_logon_brute_force",
+            } or queue_item.get("severity") in {"medium", "high", "critical"}:
+                try:
+                    from backend.alert_engine.alert_manager import get_alert_manager
+
+                    alert_mgr = get_alert_manager()
+                    prediction = {
+                        "attack_type": queue_item.get("event_type", "UnknownAttack"),
+                        "confidence": 0.95 if queue_item.get("severity") in {"high", "critical"} else 0.9,
+                        "severity": queue_item.get("severity", "medium"),
+                    }
+                    flow_info = {
+                        "src_ip": queue_item.get("source_ip"),
+                        "dst_ip": server_name,
+                        "event_type": queue_item.get("event_type", "generic"),
+                        "count": queue_item.get("count", 1),
+                    }
+                    alert_mgr.generate_alert(prediction, flow_info)
+                except Exception as alert_exc:
+                    logger.debug("Immediate alert trigger failed for %s: %s", queue_item.get("event_type"), alert_exc)
         except Exception as e:
             logger.error("Failed to queue event: %s", e)
-    
+
     logger.debug("Queued %d security events from server %s", event_count, server_name)
     return {"status": "accepted", "queued_events": event_count}
 

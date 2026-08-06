@@ -30,8 +30,8 @@ export default function Network() {
   const [loading, setLoading] = useState(!_networkCache)
   const [filterProto, setFilterProto] = useState('')
 
-  const loadData = async () => {
-    setLoading(true)
+  const loadData = async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const [flowsData, statsData, talkersData] = await Promise.all([
         fetchActiveFlows(200),
@@ -45,12 +45,12 @@ export default function Network() {
     } catch (err) {
       console.error('Failed to load network data:', err)
     }
-    setLoading(false)
+    if (!silent) setLoading(false)
   }
 
   useEffect(() => {
     loadData()
-    const interval = setInterval(loadData, 10000)
+    const interval = setInterval(() => loadData(true), 10000)
     return () => clearInterval(interval)
   }, [])
 

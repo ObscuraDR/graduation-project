@@ -43,34 +43,34 @@ function PerClassMetrics({ matrix, labels }) {
   })
 
   const pct = (v) => `${(v * 100).toFixed(1)}%`
-  const color = (v) => v >= 0.95 ? 'text-green-600' : v >= 0.80 ? 'text-yellow-600' : 'text-red-500'
+  const color = (v) => v >= 0.95 ? 'text-emerald-400' : v >= 0.80 ? 'text-amber-400' : 'text-red-400'
 
   return (
     <div className="flex-1 min-w-[260px]">
-      <h4 className="text-sm font-semibold text-gray-700 mb-3">Per-class Metrics</h4>
+      <h4 className="text-sm font-semibold text-slate-300 mb-3">Per-class Metrics</h4>
       <table className="w-full text-sm border-collapse">
         <thead>
-          <tr className="bg-gray-50">
-            <th className="text-left p-2 text-xs font-semibold text-gray-600 border border-gray-200">Class</th>
-            <th className="text-center p-2 text-xs font-semibold text-gray-600 border border-gray-200">Precision</th>
-            <th className="text-center p-2 text-xs font-semibold text-gray-600 border border-gray-200">Recall</th>
-            <th className="text-center p-2 text-xs font-semibold text-gray-600 border border-gray-200">F1</th>
+          <tr className="bg-slate-800/80 text-slate-400 border-b border-slate-700/60">
+            <th className="text-left p-2 text-xs font-semibold border border-slate-800">Class</th>
+            <th className="text-center p-2 text-xs font-semibold border border-slate-800">Precision</th>
+            <th className="text-center p-2 text-xs font-semibold border border-slate-800">Recall</th>
+            <th className="text-center p-2 text-xs font-semibold border border-slate-800">F1</th>
           </tr>
         </thead>
         <tbody>
           {metrics.map(({ label, precision, recall, f1 }) => (
-            <tr key={label} className="hover:bg-gray-50">
-              <td className="p-2 border border-gray-200 font-medium text-gray-800">{label}</td>
-              <td className={`p-2 border border-gray-200 text-center font-mono font-medium ${color(precision)}`}>{pct(precision)}</td>
-              <td className={`p-2 border border-gray-200 text-center font-mono font-medium ${color(recall)}`}>{pct(recall)}</td>
-              <td className={`p-2 border border-gray-200 text-center font-mono font-medium ${color(f1)}`}>{pct(f1)}</td>
+            <tr key={label} className="hover:bg-slate-800/40 border-b border-slate-800/60">
+              <td className="p-2 border border-slate-800 font-medium text-slate-200">{label}</td>
+              <td className={`p-2 border border-slate-800 text-center font-mono font-medium ${color(precision)}`}>{pct(precision)}</td>
+              <td className={`p-2 border border-slate-800 text-center font-mono font-medium ${color(recall)}`}>{pct(recall)}</td>
+              <td className={`p-2 border border-slate-800 text-center font-mono font-medium ${color(f1)}`}>{pct(f1)}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      <div className="flex gap-4 mt-3 text-xs text-gray-500">
-        <span className="flex items-center gap-1"><span className="w-2 h-2 bg-green-500 rounded-full" />≥ 95%</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 bg-yellow-400 rounded-full" />≥ 80%</span>
+      <div className="flex gap-4 mt-3 text-xs text-slate-400">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 bg-emerald-400 rounded-full" />≥ 95%</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 bg-amber-400 rounded-full" />≥ 80%</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 bg-red-400 rounded-full" />&lt; 80%</span>
       </div>
     </div>

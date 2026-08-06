@@ -6,11 +6,12 @@ pydantic-settings==2.6.1
 python-jose[cryptography]==3.3.0
 bcrypt==4.2.1
 aiosmtplib==3.0.1
-shap==0.46.0
-numpy==1.26.4
-pandas==2.2.3
-xgboost==2.1.3
-scikit-learn==1.5.2
+# shap cần pre-built wheel, cài riêng: pip install shap==0.52.0 --only-binary=:all:
+shap==0.52.0
+numpy>=2.1.0
+pandas>=2.2.3
+xgboost>=2.1.3
+scikit-learn>=1.5.2
 httpx==0.27.2
 scapy==2.6.1
 python-json-logger==3.2.0

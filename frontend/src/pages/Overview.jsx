@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Activity, AlertTriangle, Shield, Server, Ban, Zap } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -7,6 +8,7 @@ import {
 import SeverityBadge from '../components/SeverityBadge'
 import { fetchAlerts, fetchDashboardStats } from '../lib/api'
 import { formatDatetime, formatChartHour } from '../lib/datetime'
+import { onWebSocketMessage } from '../lib/websocket'
 
 const SEVERITY_COLORS = {
   critical: '#ef4444',
@@ -20,40 +22,100 @@ const SEVERITY_COLORS = {
 let _dashboardCache = null
 let _recentAlertsCache = []
 
+const TIME_RANGES = [
+  { label: '1 giờ qua',  hours: 1   },
+  { label: '24 giờ qua', hours: 24  },
+  { label: '3 ngày qua', hours: 72  },
+  { label: '7 ngày qua', hours: 168 },
+]
+
 export default function Overview() {
   const [dashboard, setDashboard] = useState(_dashboardCache)
   const [recentAlerts, setRecentAlerts] = useState(_recentAlertsCache)
   const [isRefreshing, setIsRefreshing] = useState(!_dashboardCache)
+  const [selectedHours, setSelectedHours] = useState(24)
+
+  const loadDashboard = async (hours, silent = false) => {
+    if (!silent) setIsRefreshing(true)
+    try {
+      const d = await fetchDashboardStats(hours)
+      setDashboard(d)
+      _dashboardCache = d
+    } catch {}
+    if (!silent) setIsRefreshing(false)
+  }
 
   useEffect(() => {
     const loadAll = async () => {
       setIsRefreshing(true)
       const [d, a] = await Promise.allSettled([
-        fetchDashboardStats(24),
+        fetchDashboardStats(selectedHours),
         fetchAlerts({ limit: 8 }),
       ])
       if (d.status === 'fulfilled') { setDashboard(d.value); _dashboardCache = d.value }
-      if (a.status === 'fulfilled') { setRecentAlerts(a.value); _recentAlertsCache = a.value }
+      if (a.status === 'fulfilled') {
+        const alertData = a.value
+        const items = Array.isArray(alertData) ? alertData : (alertData?.items || [])
+        setRecentAlerts(items)
+        _recentAlertsCache = items
+      }
       setIsRefreshing(false)
     }
 
     loadAll()
 
     const interval = setInterval(() => {
-      fetchDashboardStats(24).then((d) => {
-        setDashboard(d); _dashboardCache = d
-      }).catch(() => {})
+      loadDashboard(selectedHours, true)
     }, 30000)
 
-    return () => clearInterval(interval)
-  }, [])
+    // Listen to real-time WebSocket alerts
+    const unsubWs = onWebSocketMessage((msg) => {
+      if (msg.type === 'alert' && msg.data) {
+        const alertData = msg.data
+        const formattedAlert = {
+          alert_id: alertData.alert_id || String(Date.now()),
+          attack_type: alertData.attack_type || 'Unknown Attack',
+          source_ip: alertData.src_ip || alertData.source_ip || '—',
+          dest_ip: alertData.dst_ip || alertData.dest_ip || '—',
+          severity: alertData.severity || 'medium',
+          timestamp: alertData.timestamp || new Date().toISOString(),
+        }
+
+        setRecentAlerts((prev) => {
+          const filtered = prev.filter((a) => a.alert_id !== formattedAlert.alert_id)
+          const updated = [formattedAlert, ...filtered].slice(0, 8)
+          _recentAlertsCache = updated
+          return updated
+        })
+
+        setDashboard((prev) => {
+          if (!prev) return prev
+          const updated = {
+            ...prev,
+            total_alerts: (prev.total_alerts || 0) + 1,
+            active_alerts: (prev.active_alerts || 0) + 1,
+            active_threats: (prev.active_threats || 0) + 1,
+          }
+          _dashboardCache = updated
+          return updated
+        })
+      }
+    })
+
+    return () => {
+      clearInterval(interval)
+      unsubWs()
+    }
+  }, [selectedHours])
+
+  const rangeLabel = TIME_RANGES.find(r => r.hours === selectedHours)?.label || '24 giờ qua'
 
   // KPI cards
   const kpis = [
     { title: 'Máy chủ', value: dashboard?.total_servers ?? '—', sub: 'đang quản lý', icon: Server, color: 'blue' },
-    { title: 'Tổng cảnh báo', value: dashboard?.total_alerts ?? 0, sub: `${dashboard?.active_alerts ?? 0} đang hoạt động`, icon: AlertTriangle, color: 'red' },
+    { title: 'Tổng cảnh báo', value: dashboard?.total_alerts ?? 0, sub: `${dashboard?.active_alerts ?? 0} đang hoạt động · ${rangeLabel}`, icon: AlertTriangle, color: 'red' },
     { title: 'IP bị chặn', value: dashboard?.blocked_ips ?? 0, sub: 'đang chặn', icon: Ban, color: 'amber' },
-    { title: 'Mối đe dọa', value: dashboard?.active_threats ?? 0, sub: 'cần xử lý', icon: Shield, color: 'purple' },
+    { title: 'Mối đe dọa', value: dashboard?.active_threats ?? 0, sub: `cần xử lý · ${rangeLabel}`, icon: Shield, color: 'purple' },
   ]
 
   const iconColorMap = {
@@ -75,7 +137,22 @@ export default function Overview() {
           <h1 className="text-2xl font-bold text-slate-100">Tổng quan hệ thống</h1>
           <p className="text-sm text-slate-500 mt-0.5">Z-Sentinel IDS — Real-time Monitoring</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {/* Time range dropdown */}
+          <select
+            value={selectedHours}
+            onChange={e => {
+              const h = parseInt(e.target.value)
+              setSelectedHours(h)
+              loadDashboard(h)
+            }}
+            className="px-3 py-1.5 text-sm bg-slate-800 border border-slate-700 rounded-lg text-slate-300 focus:outline-none focus:border-blue-500 transition-colors"
+          >
+            {TIME_RANGES.map(r => (
+              <option key={r.hours} value={r.hours}>{r.label}</option>
+            ))}
+          </select>
+
           {isRefreshing && <span className="text-xs text-slate-500 animate-pulse">Đang tải...</span>}
           <span className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -108,7 +185,7 @@ export default function Overview() {
         {/* Attack Trend — chiếm 2/3 */}
         <div className="lg:col-span-2 bg-slate-900/60 backdrop-blur-sm rounded-xl border border-slate-800/60 p-5">
           <h3 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
-            <Activity className="w-4 h-4 text-red-400" /> Xu hướng tấn công (24h)
+            <Activity className="w-4 h-4 text-red-400" /> Xu hướng tấn công ({rangeLabel})
           </h3>
           {(dashboard?.attack_trend?.length ?? 0) > 0 ? (
             <ResponsiveContainer width="100%" height={180}>
@@ -176,7 +253,7 @@ export default function Overview() {
       <div className="bg-slate-900/60 backdrop-blur-sm rounded-xl border border-slate-800/60 p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-slate-300">Cảnh báo gần đây</h3>
-          <a href="/alerts" className="text-xs text-blue-400 hover:text-blue-300 transition-colors">Xem tất cả →</a>
+          <Link to="/alerts" className="text-xs text-blue-400 hover:text-blue-300 transition-colors">Xem tất cả →</Link>
         </div>
         <div className="space-y-2 max-h-[220px] overflow-y-auto">
           {recentAlerts.length > 0 ? recentAlerts.map((alert) => (

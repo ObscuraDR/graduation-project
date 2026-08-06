@@ -520,3 +520,21 @@ async def delete_user(
         client_ip=get_client_ip(request)
     )
     return
+
+
+# ── API Key endpoint ──────────────────────────────────────────────────────────
+@auth_router.get("/api-key")
+async def get_api_key(
+    current_user: User = Depends(get_current_user_from_cookie),
+):
+    """
+    GET /api/auth/api-key — trả về X-API-Key cho admin/operator.
+    Frontend gọi endpoint này sau khi login để tự động lưu key vào localStorage.
+    Chỉ user đã xác thực JWT mới truy cập được.
+    """
+    if current_user.role not in ("admin", "operator"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Không có quyền truy cập API key",
+        )
+    return {"api_key": settings.api_key}

@@ -51,16 +51,18 @@ export default function AuditLogs() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <History className="w-8 h-8 text-amber-500" />
+          <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
+            <History className="w-6 h-6 text-amber-400" />
+          </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">Audit Log</h1>
-            <p className="text-sm text-gray-400">Lịch sử thao tác người dùng</p>
+            <h1 className="text-2xl font-bold text-slate-100">Audit Log</h1>
+            <p className="text-sm text-slate-500">Lịch sử thao tác người dùng</p>
           </div>
         </div>
         <select
           value={actionFilter}
           onChange={(e) => setActionFilter(e.target.value)}
-          className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700"
+          className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-amber-500"
         >
           <option value="">Tất cả hành động</option>
           {Object.entries(ACTION_LABELS).map(([k, v]) => (
@@ -69,13 +71,13 @@ export default function AuditLogs() {
         </select>
       </div>
 
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+      <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-800/60 rounded-xl overflow-hidden">
         {loading ? (
-          <p className="p-6 text-gray-400">Đang tải...</p>
+          <p className="p-6 text-slate-400">Đang tải...</p>
         ) : (
           <>
-            <table className="w-full text-left text-sm text-gray-700">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+            <table className="w-full text-left text-sm text-slate-300">
+              <thead className="bg-slate-800/80 text-xs uppercase text-slate-400 border-b border-slate-700/60">
                 <tr>
                   <th className="px-4 py-3">Thời gian</th>
                   <th className="px-4 py-3">User</th>
@@ -85,26 +87,26 @@ export default function AuditLogs() {
                   <th className="px-4 py-3">IP</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-slate-800/60">
                 {logs.length === 0 ? (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">Chưa có audit log</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">Chưa có audit log</td></tr>
                 ) : logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2 text-xs text-gray-600">{formatDatetime(log.created_at)}</td>
-                    <td className="px-4 py-2 font-medium text-gray-800">{log.username}</td>
+                  <tr key={log.id} className="hover:bg-slate-800/40 transition-colors">
+                    <td className="px-4 py-2 text-xs text-slate-400">{formatDatetime(log.created_at)}</td>
+                    <td className="px-4 py-2 font-medium text-slate-200">{log.username}</td>
                     <td className="px-4 py-2">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-100 text-amber-700 text-xs">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs">
                         <Shield className="w-3 h-3" />
                         {ACTION_LABELS[log.action] || log.action}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-xs text-gray-500">
+                    <td className="px-4 py-2 text-xs text-slate-400">
                       {log.resource_type ? `${log.resource_type}${log.resource_id ? ` #${log.resource_id}` : ''}` : '—'}
                     </td>
-                    <td className="px-4 py-2 text-[10px] font-mono text-gray-500 max-w-[200px] truncate">
+                    <td className="px-4 py-2 text-[10px] font-mono text-slate-400 max-w-[200px] truncate">
                       {log.details ? JSON.stringify(log.details) : '—'}
                     </td>
-                    <td className="px-4 py-2 font-mono text-xs text-gray-600">{log.client_ip || '—'}</td>
+                    <td className="px-4 py-2 font-mono text-xs text-slate-400">{log.client_ip || '—'}</td>
                   </tr>
                 ))}
               </tbody>

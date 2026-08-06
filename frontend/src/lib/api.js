@@ -43,14 +43,31 @@ api.interceptors.request.use((config) => {
 // Chỉ logout khi JWT không hợp lệ, không logout khi thiếu API key
 api.interceptors.response.use(
   (res) => res,
-  (error) => {
+  async (error) => {
     if (error.response?.status === 401) {
       const detail = error.response?.data?.detail || ''
       const isApiKeyError = detail.toLowerCase().includes('api key')
       if (!isApiKeyError) {
-        clearAuth()
-        if (window.location.pathname !== '/login') {
-          window.location.assign('/login')
+        const originalRequest = error.config
+        // Chỉ retry 1 lần, tránh vòng lặp vô hạn
+        if (!originalRequest._retried) {
+          originalRequest._retried = true
+          try {
+            // Cookie HttpOnly vẫn còn → lấy lại user info và restore localStorage
+            const meRes = await axios.get(`${API_BASE}/auth/me`, { withCredentials: true })
+            if (meRes.data) {
+              const { setAuth } = await import('./auth')
+              setAuth(meRes.data, null)  // restore user, cookie tự handle token
+            }
+            // Retry request gốc
+            return api(originalRequest)
+          } catch {
+            // /auth/me cũng fail → session thực sự hết hạn → logout
+            clearAuth()
+            if (window.location.pathname !== '/login') {
+              window.location.assign('/login')
+            }
+          }
         }
       }
     }
@@ -58,7 +75,22 @@ api.interceptors.response.use(
   }
 )
 
-// ─── Health ──────────────────────────────────────────────────────────────────
+// ─── Auth API key bootstrap ──────────────────────────────────────────────────
+/**
+ * Gọi sau khi login thành công để tự động lưu X-API-Key vào localStorage.
+ * Không throw — nếu fail thì user vẫn đăng nhập được, chỉ sniffer không dùng được.
+ */
+export async function fetchAndStoreApiKey() {
+  try {
+    const res = await api.get('/auth/api-key')
+    const key = res.data?.api_key
+    if (key) {
+      localStorage.setItem('ids_api_key', key)
+    }
+  } catch (err) {
+    console.warn('Could not fetch API key:', err?.response?.status)
+  }
+}
 export async function fetchHealth() {
   const res = await axios.get('/health')
   return res.data
