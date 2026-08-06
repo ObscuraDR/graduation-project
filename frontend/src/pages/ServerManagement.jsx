@@ -71,10 +71,10 @@ export default function ServerManagement() {
         if (!log.server || log.server === 'local') return;
         const name = log.server;
         if (!byServer[name]) byServer[name] = [];
-        // Chỉ giữ events trong 5 phút gần nhất
+        // Chỉ giữ events trong 3 phút gần nhất (giảm từ 5 xuống 3)
         const ts = new Date(log.timestamp);
         const age = (Date.now() - ts.getTime()) / 1000 / 60; // minutes
-        if (age <= 5) {
+        if (age <= 3) {
           byServer[name].push({
             event_type: log.event_type,
             severity:   log.extra?.severity || 'low',

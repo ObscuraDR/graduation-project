@@ -29,8 +29,10 @@ async def check_server_status_task():
                     if time_since_last_seen.total_seconds() > settings.server_offline_threshold_seconds:
                         if server.status != "offline":
                             ServerRepository.update_server_status(db, server.id, "offline")
-                    elif server.status == "offline":
-                        ServerRepository.update_server_status(db, server.id, "online")
+                    else:
+                        # Reset về online nếu đang offline hoặc warning
+                        if server.status in ("offline", "warning"):
+                            ServerRepository.update_server_status(db, server.id, "online")
             finally:
                 db.close()
         except Exception as e:
