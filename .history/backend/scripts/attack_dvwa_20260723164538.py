@@ -134,7 +134,7 @@ def ddos_attack(target_url: str, count: int, threads: int = 10):
     print(f"{Color.BLUE}[+] Target: {target_url}")
     print(f"[+] Total requests: {count}")
     print(f"[+] Threads: {threads}")
-    print(f"{Color.YELLOW}[*] Starting DDoS attack...{Color.NC}\n")
+    print(f"{YELLOW}[*] Starting DDoS attack...{Color.NC}\n")
     
     results = {'success': 0, 'failed': 0, 'total': 0}
     lock = threading.Lock()
