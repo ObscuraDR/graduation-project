@@ -172,17 +172,17 @@ export default function UserManagementAndAudit() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-gray-200 mb-6">
+      <div className="flex gap-2 border-b border-slate-800/80 mb-6 pb-1">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setActiveTab(id)}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-all rounded-t-lg ${
               activeTab === id
-                ? 'border-blue-500 text-blue-600 bg-blue-50'
-                : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-800/30'
+                ? 'border-blue-500 text-blue-400 bg-blue-500/10'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
             }`}
           >
             <Icon className="w-4 h-4" />

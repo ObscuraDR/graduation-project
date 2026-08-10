@@ -31,7 +31,7 @@ async def start_sniffer(
     interface: str = "eth0",
     filter_expr: str = "ip",
     model_name: str = "ensemble",
-    min_packets: int = 10,
+    min_packets: int = 3,
     prediction_mode: str = "once",
     prediction_interval_sec: float = 5.0,
     flow_expire_sec: int = 30,

@@ -6,42 +6,61 @@ import axios from 'axios'
 /**
  * Route guard — chỉ cho phép truy cập khi đã đăng nhập.
  *
- * Thay vì redirect ngay khi localStorage trống (có thể do clearAuth() nhầm),
- * component thử gọi /api/auth/me để kiểm tra cookie HttpOnly còn sống không.
- * Chỉ redirect về /login khi cả localStorage lẫn cookie đều không hợp lệ.
+ * Dùng module-level cache để tránh re-check mỗi lần chuyển tab.
+ * Chỉ check /api/auth/me một lần duy nhất khi localStorage trống.
  */
+
+// Cache ở module level — không reset khi component re-render
+let _authChecked = false
+let _authResult = isAuthenticated()
+
 export default function RequireAuth({ children }) {
   const location = useLocation()
-  const [checking, setChecking] = useState(!isAuthenticated())
-  const [authed, setAuthed] = useState(isAuthenticated())
+
+  // Nếu đã check rồi hoặc đã có auth → không cần loading
+  const [checking, setChecking] = useState(!_authChecked && !_authResult)
+  const [authed, setAuthed] = useState(_authResult)
 
   useEffect(() => {
-    // Nếu đã có user trong localStorage thì không cần check lại
-    if (isAuthenticated()) {
-      setAuthed(true)
+    // Đã check rồi hoặc đã có auth → bỏ qua
+    if (_authChecked || _authResult) {
       setChecking(false)
+      setAuthed(_authResult)
       return
     }
 
-    // localStorage trống → thử dùng cookie để khôi phục session
+    // localStorage trống → thử dùng cookie để khôi phục session (1 lần duy nhất)
     axios.get('/api/auth/me', { withCredentials: true })
       .then((res) => {
         if (res.data) {
-          setAuth(res.data, null)  // restore user vào localStorage
+          setAuth(res.data, null)
+          _authResult = true
           setAuthed(true)
+          // Thông báo cho các component con biết session đã được khôi phục
+          window.dispatchEvent(new CustomEvent('auth:restored', { detail: res.data }))
         } else {
+          _authResult = false
           setAuthed(false)
         }
       })
       .catch(() => {
+        _authResult = false
         setAuthed(false)
       })
       .finally(() => {
+        _authChecked = true
         setChecking(false)
       })
   }, [])
 
-  // Đang kiểm tra session → hiển thị màn hình loading thay vì redirect
+  // Reset cache khi logout (localStorage bị xóa)
+  useEffect(() => {
+    if (!isAuthenticated() && _authResult) {
+      _authChecked = false
+      _authResult = false
+    }
+  })
+
   if (checking) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">

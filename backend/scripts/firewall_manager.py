@@ -3,6 +3,7 @@ import asyncio
 import platform
 import logging
 import os
+from typing import Optional, List, Dict
 import httpx
 import ipaddress
 from datetime import datetime, timedelta # Thêm import này
@@ -271,6 +272,14 @@ class FirewallManager:
         """Deprecated: Use handle_firewall_block in run_sniffer.py instead."""
         logger.warning("FirewallManager.schedule_unblock is deprecated. Use native asyncio tasks.")
         return False
+
+_fw_instance: Optional[FirewallManager] = None
+
+def get_firewall_manager() -> FirewallManager:
+    global _fw_instance
+    if _fw_instance is None:
+        _fw_instance = FirewallManager()
+    return _fw_instance
 
 if __name__ == "__main__":
     # Test nhanh module

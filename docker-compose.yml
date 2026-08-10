@@ -9,9 +9,10 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app/backend
+      - ./ai:/app/ai
+      - ./data:/app/data
       - ./backend/models:/app/backend/models
       - ./logs:/app/logs
-      - ./backend/data:/app/backend/data
     env_file:
       - .env
     environment:

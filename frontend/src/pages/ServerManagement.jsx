@@ -6,10 +6,17 @@ import { formatDatetime, formatChartTime } from '../lib/datetime';
 import { fetchSecurityLogs } from '../lib/api';
 
 const CHART_TOOLTIP_STYLE = {
-  background: '#0f172a',
-  border: '1px solid #334155',
+  background: '#ffffff',
+  border: '1px solid #e2e8f0',
   borderRadius: '8px',
-  color: '#e2e8f0',
+  color: '#1e293b',
+  boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+  fontSize: '13px',
+}
+
+const CHART_WRAPPER_STYLE = {
+  outline: 'none',
+  zIndex: 9999,
 }
 
 const inputClass = "w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 placeholder-slate-600 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
@@ -385,6 +392,7 @@ export default function ServerManagement() {
                             formatter={(value) => `${value.toFixed(1)}%`}
                             labelFormatter={formatDatetime}
                             contentStyle={CHART_TOOLTIP_STYLE}
+                            wrapperStyle={CHART_WRAPPER_STYLE}
                           />
                           <Line type="monotone" dataKey={key} stroke={color} strokeWidth={2} dot={false} />
                         </LineChart>

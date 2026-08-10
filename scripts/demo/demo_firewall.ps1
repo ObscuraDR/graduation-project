@@ -6,7 +6,18 @@ $ErrorActionPreference = "Stop"
 # Configuration
 $API_URL = "http://localhost:8000"
 $SERVER_ID = 1
-$API_KEY = "changeme"  # Thay bằng API key thực tế từ .env
+$API_KEY = "changeme-set-API_KEY-in-env"
+
+# Parse API_KEY from .env if present
+$envPath = Join-Path $PSScriptRoot "..\..\.env"
+if (Test-Path $envPath) {
+    foreach ($line in Get-Content $envPath) {
+        if ($line -match "^API_KEY=(.+)") {
+            $API_KEY = $matches[1].Trim()
+        }
+    }
+}
+
 $ATTACKER_IP = "192.168.1.100"
 
 Write-Host "========================================" -ForegroundColor Cyan
@@ -30,21 +41,23 @@ Write-Host ""
 Write-Host "[2] Checking/Creating test server..." -ForegroundColor Yellow
 try {
     $servers = Invoke-RestMethod -Uri "$API_URL/api/servers" -Method GET
-    $testServer = $servers | Where-Object { $_.id -eq $SERVER_ID }
-    
-    if (-not $testServer) {
-        Write-Host "Creating test server (ID: $SERVER_ID)..." -ForegroundColor Gray
+    if ($servers -and $servers.Count -gt 0) {
+        $testServer = $servers[0]
+        $SERVER_ID = $testServer.id
+        Write-Host "✓ Using existing test server '$($testServer.name)' (ID: $SERVER_ID, IP: $($testServer.ip_address))" -ForegroundColor Green
+    } else {
+        Write-Host "Creating test server..." -ForegroundColor Gray
+        $randomOctet = Get-Random -Minimum 2 -Maximum 250
         $body = @{
             name = "demo-server"
-            ip_address = "192.168.1.1"
+            ip_address = "192.168.1.$randomOctet"
             os = "Linux"
             description = "Demo server for firewall testing"
         } | ConvertTo-Json
         
-        Invoke-RestMethod -Uri "$API_URL/api/servers" -Method POST -Body $body -ContentType "application/json"
-        Write-Host "✓ Test server created" -ForegroundColor Green
-    } else {
-        Write-Host "✓ Test server exists (ID: $SERVER_ID)" -ForegroundColor Green
+        $created = Invoke-RestMethod -Uri "$API_URL/api/servers" -Method POST -Body $body -ContentType "application/json"
+        $SERVER_ID = $created.id
+        Write-Host "✓ Test server created (ID: $SERVER_ID)" -ForegroundColor Green
     }
 } catch {
     Write-Host "✗ Failed to create/check server: $_" -ForegroundColor Red
@@ -109,7 +122,8 @@ Write-Host ""
 Write-Host "[5] Checking blacklist..." -ForegroundColor Yellow
 try {
     $blacklist = Invoke-RestMethod -Uri "$API_URL/api/blacklist" -Method GET
-    $blockedIP = $blacklist | Where-Object { $_.ip_address -eq $ATTACKER_IP }
+    $items = if ($blacklist.items) { $blacklist.items } else { $blacklist }
+    $blockedIP = $items | Where-Object { $_.ip_address -eq $ATTACKER_IP }
     
     if ($blockedIP) {
         Write-Host "✓ IP $ATTACKER_IP is BLOCKED!" -ForegroundColor Green

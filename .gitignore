@@ -47,9 +47,11 @@ models/*.joblib
 backend/models/_backup_*/
 
 # ─── Data (raw/processed datasets) ────────────────────────────────────────
-data/raw/
-data/processed/
+data/raw/*
+data/processed/*.csv
 data/*.csv
+data/models/*.pkl
+data/models/*.h5
 !data/.gitkeep
 backend/data/cicids2017/
 

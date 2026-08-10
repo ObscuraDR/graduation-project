@@ -1,12 +1,16 @@
 """
-IDS Backend - Main Application
-Machine Learning-based Intrusion Detection System
+IDS Backend - Main Application Entrypoint
+===========================================
+Ứng dụng backend chính sử dụng FastAPI quản lý:
+1. REST API endpoints (quản lý cảnh báo, lưu lượng mạng, người dùng, cấu hình, AI XAI)
+2. WebSocket Real-time Broadcasting (truyền tải dữ liệu gói tin và cảnh báo trực tiếp đến Dashboard)
+3. Lifespan Background Workers (sniffer bắt gói tin, UEBA worker phát hiện bất thường hành vi, tự động gỡ IP quá hạn khỏi Firewall)
 """
 
 import sys
 from pathlib import Path
 
-# Thêm thư mục gốc của dự án vào sys.path để nhận diện package 'backend'
+# Thêm thư mục gốc dự án vào sys.path để Python nhận diện các package 'backend' và 'ai'
 project_root = str(Path(__file__).parent.parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -20,32 +24,37 @@ import asyncio
 import uuid
 from pythonjsonlogger import jsonlogger
 
-# Configure structured JSON logging
+# ---------------------------------------------------------------------------
+# Cấu hình Structured JSON Logging (Ghi log dạng JSON phục vụ SIEM / Scanner)
+# ---------------------------------------------------------------------------
 Path("logs").mkdir(exist_ok=True)
 
-# Create JSON formatter
 formatter = jsonlogger.JsonFormatter(
     '%(asctime)s %(name)s %(levelname)s %(message)s %(correlation_id)s'
 )
 
-# Setup file handler with JSON logging
+# File log ghi ra ổ đĩa tại logs/backend.log
 file_handler = logging.FileHandler('logs/backend.log')
 file_handler.setFormatter(formatter)
 
-# Setup console handler with JSON logging
+# Console log xuất ra màn hình Terminal
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 
-# Configure root logger
 logging.basicConfig(
     level=logging.INFO,
     handlers=[file_handler, console_handler]
 )
 logger = logging.getLogger(__name__)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan context manager for startup and shutdown events"""
+    """
+    Quản lý vòng đời (Lifespan) của ứng dụng FastAPI:
+    - Khi khởi động: Khởi tạo kết nối DB, đăng ký Alert Manager, chạy các task chạy ngầm (UEBA, Status Checker, Firewall Cleanup).
+    - Khi tắt máy: Dừng an toàn các background worker và hủy kết nối.
+    """
     from backend.api.routes import sniffer as sniffer_routes
     from backend.api.websocket import get_broadcast_bridge
     from backend.alert_engine.alert_manager import get_alert_manager
@@ -138,6 +147,11 @@ async def lifespan(app: FastAPI):
     anomaly_task = asyncio.create_task(anomaly_detection_task(interval_seconds=30))
     logger.info("Anomaly detection worker started.")
 
+    # Start NetStat SYN-Flood detector (hoạt động độc lập với Npcap)
+    from backend.database.netstat_syn_flood_worker import netstat_syn_flood_task
+    syn_flood_task = asyncio.create_task(netstat_syn_flood_task())
+    logger.info("NetStat SYN-Flood detector worker started.")
+
     # (log batch worker và security log cleanup đã được khởi động ở trên)
 
     # Start LogScanner for SSH brute-force detection (optional, env-gated)
@@ -178,6 +192,9 @@ async def lifespan(app: FastAPI):
 
     # Stop anomaly detection worker
     anomaly_task.cancel()
+
+    # Stop NetStat SYN-Flood detector
+    syn_flood_task.cancel()
 
     # (stop_log_worker đã được gọi ở trên)
 

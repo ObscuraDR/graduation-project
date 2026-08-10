@@ -5,6 +5,8 @@ Coordinates the IDS pipeline as a background task in FastAPI
 
 import logging
 import asyncio
+import time
+from collections import defaultdict
 from typing import Literal, Optional
 
 from backend.capture_engine.packet_sniffer import get_sniffer
@@ -85,6 +87,11 @@ class PipelineCoordinator:
         self.skipped_below_min_packets = 0
         self.cleanup_runs = 0
         self.orphan_inference_runs = 0
+
+        # SYN-flood in-line detector (tracks per-src-IP SYN count in a sliding window)
+        self._syn_counts: dict = defaultdict(list)   # ip -> [timestamps]
+        self._syn_window_sec: int = 10               # sliding window size (seconds)
+        self._syn_flood_threshold: int = 100         # SYNs per window => flood
 
     def initialize(self) -> None:
         logger.info("Initializing IDS pipeline components...")
@@ -197,8 +204,75 @@ class PipelineCoordinator:
                 exc,
             )
 
+    def _check_syn_flood(self, packet_info: dict) -> None:
+        """
+        In-line SYN flood detector: count SYN packets per source IP over a
+        sliding window. If rate exceeds threshold, trigger alert+auto-block
+        immediately — bypassing the per-flow min_packets gate.
+        """
+        flags = packet_info.get('tcp_flags') or {}
+        # Only count pure SYN (not SYN-ACK replies from the server)
+        is_syn = bool(flags.get('SYN'))
+        is_ack = bool(flags.get('ACK'))
+        if not is_syn or is_ack:
+            return
+
+        src_ip = packet_info.get('src_ip')
+        dst_ip = packet_info.get('dst_ip')
+        dst_port = packet_info.get('dst_port')
+
+        if not src_ip or self.alert_manager is None:
+            return
+
+        now = time.monotonic()
+        window = self._syn_window_sec
+
+        # Append and prune old timestamps outside the window
+        ts_list = self._syn_counts[src_ip]
+        ts_list.append(now)
+        self._syn_counts[src_ip] = [t for t in ts_list if now - t <= window]
+
+        count = len(self._syn_counts[src_ip])
+
+        # Progress log every 50 SYNs so we can confirm packets are arriving
+        if count % 50 == 0 and count > 0:
+            logger.info(
+                "[SYN COUNTER] %s -> %s:%s : %d SYNs in last %ds (threshold=%d)",
+                src_ip, dst_ip, dst_port, count, window, self._syn_flood_threshold,
+            )
+
+        if count >= self._syn_flood_threshold:
+            logger.warning(
+                "[SYN FLOOD DETECTED] %s sent %d SYNs in %ds — triggering alert",
+                src_ip, count, window,
+            )
+            # Reset counter so we don't fire again immediately
+            self._syn_counts[src_ip] = []
+
+            synthetic_prediction = {
+                'attack_type': 'syn_flood_inbound',
+                'confidence': 0.95,
+                'severity': 'high',
+                'all_probabilities': {'syn_flood_inbound': 0.95, 'Normal': 0.05},
+                'features': {},
+                'model_name': 'syn_flood_detector',
+                'model_version': '1.0',
+            }
+            synthetic_flow = {
+                'src_ip': src_ip,
+                'dst_ip': dst_ip,
+                'src_port': packet_info.get('src_port'),
+                'dst_port': dst_port,
+                'protocol': 'tcp',
+                'flow_key': f"{src_ip}:*-{dst_ip}:{dst_port}-tcp",
+            }
+            self.alert_manager.generate_alert(synthetic_prediction, synthetic_flow)
+
     def packet_callback(self, packet_info: dict) -> None:
         self.processed_packets += 1
+
+        # SYN-flood in-line check (runs for every SYN packet, independent of flows)
+        self._check_syn_flood(packet_info)
 
         flow = self.flow_builder.add_packet(packet_info)
         if not flow:

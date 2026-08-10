@@ -193,7 +193,7 @@ def test_explain_model_not_supported(test_client: TestClient) -> None:
     POST /api/xai/explain where the model does not support TreeExplainer
     must return HTTP 400 with UnsupportedModelError.
     """
-    from backend.ml.xai import UnsupportedModelError
+    from ai.xai import UnsupportedModelError
 
     expected_features_set = set(FEATURE_NAMES)
 

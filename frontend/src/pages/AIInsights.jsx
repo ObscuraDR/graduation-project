@@ -96,6 +96,108 @@ export default function AIInsights() {
   const [xaiLoading, setXaiLoading] = useState(false)
   const [xaiError, setXaiError] = useState(null)
 
+  // ── Input mode state ────────────────────────────────────────────────────────
+  const [inputMode, setInputMode] = useState('sample')   // 'sample' | 'paste' | 'upload'
+  const [pasteText, setPasteText] = useState('')
+  const [parseError, setParseError] = useState(null)
+  const [parsedFeatures, setParsedFeatures] = useState(null)
+  const [csvRows, setCsvRows] = useState([])
+  const [selectedRow, setSelectedRow] = useState(0)
+
+  // 20 features chuẩn
+  const FEATURE_NAMES = [
+    'flow_duration','total_fwd_packets','total_bwd_packets',
+    'total_fwd_bytes','total_bwd_bytes','avg_packet_size',
+    'packet_rate','byte_rate','syn_count','fin_count',
+    'rst_count','psh_count','ack_count','unique_dst_ports',
+    'inter_arrival_time_mean','fwd_packet_rate','bwd_packet_rate',
+    'fwd_byte_rate','bwd_byte_rate','packet_length_mean',
+  ]
+
+  // Parse log text dạng JSON hoặc key:value
+  const parseLogText = (text) => {
+    setParseError(null)
+    try {
+      // Thử parse JSON trước
+      const obj = JSON.parse(text.trim())
+      const features = {}
+      for (const k of FEATURE_NAMES) {
+        if (obj[k] === undefined) throw new Error(`Thiếu feature: ${k}`)
+        const v = parseFloat(obj[k])
+        if (isNaN(v)) throw new Error(`Giá trị không hợp lệ cho ${k}: ${obj[k]}`)
+        features[k] = v
+      }
+      setParsedFeatures(features)
+      return features
+    } catch (jsonErr) {
+      // Thử parse dạng key: value (mỗi dòng)
+      try {
+        const lines = text.trim().split('\n')
+        const obj = {}
+        for (const line of lines) {
+          const sep = line.includes(':') ? ':' : '='
+          const idx = line.indexOf(sep)
+          if (idx === -1) continue
+          const key = line.slice(0, idx).trim().replace(/['"]/g, '')
+          const val = line.slice(idx + 1).trim().replace(/['"]/g, '').replace(/,\s*$/, '')
+          obj[key] = val
+        }
+        const features = {}
+        const missing = []
+        for (const k of FEATURE_NAMES) {
+          if (obj[k] === undefined) { missing.push(k); continue }
+          const v = parseFloat(obj[k])
+          if (isNaN(v)) throw new Error(`Giá trị không hợp lệ cho ${k}`)
+          features[k] = v
+        }
+        if (missing.length > 0) throw new Error(`Thiếu ${missing.length} features: ${missing.slice(0, 3).join(', ')}...`)
+        setParsedFeatures(features)
+        return features
+      } catch (kvErr) {
+        const msg = `Không parse được: ${kvErr.message}. Dùng định dạng JSON hoặc key: value mỗi dòng.`
+        setParseError(msg)
+        return null
+      }
+    }
+  }
+
+  // Parse CSV file
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setParseError(null)
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target.result
+        const lines = text.trim().split('\n').filter(l => l.trim())
+        if (lines.length < 2) throw new Error('File CSV cần ít nhất 1 dòng header và 1 dòng dữ liệu')
+        const headers = lines[0].split(',').map(h => h.trim().replace(/['"]/g, ''))
+        const rows = []
+        for (let i = 1; i < lines.length; i++) {
+          const vals = lines[i].split(',').map(v => v.trim().replace(/['"]/g, ''))
+          const row = {}
+          headers.forEach((h, idx) => { row[h] = vals[idx] })
+          const features = {}
+          const missing = []
+          for (const k of FEATURE_NAMES) {
+            if (row[k] === undefined) { missing.push(k); continue }
+            features[k] = parseFloat(row[k]) || 0
+          }
+          if (missing.length <= 5) rows.push(features)
+        }
+        if (rows.length === 0) throw new Error('Không tìm thấy row nào có đủ features')
+        setCsvRows(rows)
+        setSelectedRow(0)
+        setParsedFeatures(rows[0])
+        setInputMode('upload')
+      } catch (err) {
+        setParseError(err.message)
+      }
+    }
+    reader.readAsText(file)
+  }
+
   useEffect(() => {
     // Fetch song song cả 2
     Promise.allSettled([
@@ -115,11 +217,12 @@ export default function AIInsights() {
     })
   }, [])
 
-  const runExplanation = async () => {
+  const runExplanation = async (featuresOverride) => {
+    const features = featuresOverride || parsedFeatures || SAMPLE_ATTACK_FEATURES
     setXaiLoading(true)
     setXaiError(null)
     try {
-      const result = await explainPrediction(SAMPLE_ATTACK_FEATURES)
+      const result = await explainPrediction(features)
       setXaiResult(result.data)
     } catch (err) {
       setXaiError(err.response?.data?.detail?.message || err.message)
@@ -368,7 +471,7 @@ export default function AIInsights() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                     <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} />
                     <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
-                    <Tooltip formatter={(v) => [v, 'Alerts']} contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' }} />
+                    <Tooltip formatter={(v) => [v, 'Alerts']} contentStyle={{ background: '#1e293b', border: '1px solid #3b82f6', borderRadius: '8px', color: '#f1f5f9', boxShadow: '0 4px 12px rgba(0,0,0,0.4)' }} />
                     <Bar dataKey="value" radius={[4, 4, 0, 0]} label={{ position: 'top', fontSize: 11, fill: '#6b7280' }}>
                       {Object.keys(engineStats.alerts_by_type).map((key, i) => (
                         <Cell key={key} fill={ATTACK_COLORS[key] || ATTACK_COLORS.default} />
@@ -397,7 +500,20 @@ export default function AIInsights() {
                           <Cell key={key} fill={SEVERITY_COLORS[key] || '#94a3b8'} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(v) => [v, 'Alerts']} contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' }} />
+                      <Tooltip
+                        formatter={(v) => [v, 'Alerts']}
+                        contentStyle={{
+                          backgroundColor: '#0f172a',
+                          borderColor: '#334155',
+                          borderRadius: '10px',
+                          color: '#ffffff',
+                          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+                          padding: '8px 12px',
+                          fontSize: '13px',
+                        }}
+                        itemStyle={{ color: '#38bdf8', fontWeight: 600 }}
+                        labelStyle={{ color: '#ffffff', fontWeight: 'bold' }}
+                      />
                       <Legend />
                     </PieChart>
                   </ResponsiveContainer>
@@ -412,51 +528,165 @@ export default function AIInsights() {
       <div className="bg-slate-900/60 backdrop-blur-sm rounded-xl border border-slate-800/60 p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-sm font-semibold text-slate-300">SHAP Explanation</h3>
-            <p className="text-xs text-slate-500">Explain why the model made a specific prediction</p>
+            <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+              <Brain className="w-4 h-4 text-violet-400" /> Phân tích SHAP — Giải thích quyết định AI
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">Nhập dữ liệu flow mạng để AI phân loại và giải thích lý do</p>
           </div>
-          <button
-            onClick={runExplanation}
-            disabled={xaiLoading}
-            className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm rounded-lg disabled:opacity-50 transition-colors shadow-lg shadow-violet-500/20"
-          >
-            {xaiLoading ? 'Analyzing...' : 'Run Explanation'}
-          </button>
         </div>
 
+        {/* Input mode tabs */}
+        <div className="flex gap-1 bg-slate-800/40 p-1 rounded-lg w-fit border border-slate-700/40 mb-4">
+          {[
+            { id: 'sample', label: 'Mẫu sẵn' },
+            { id: 'paste', label: 'Dán log text' },
+            { id: 'upload', label: 'Upload CSV' },
+          ].map(({ id, label }) => (
+            <button key={id} onClick={() => { setInputMode(id); setXaiResult(null); setParseError(null) }}
+              className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${
+                inputMode === id ? 'bg-slate-700 text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-300'
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Mode: Paste log text */}
+        {inputMode === 'paste' && (
+          <div className="mb-4 space-y-2">
+            <p className="text-xs text-slate-400">
+              Hỗ trợ 2 định dạng: <code className="bg-slate-800 px-1 rounded text-violet-300">JSON</code> hoặc <code className="bg-slate-800 px-1 rounded text-violet-300">key: value</code> mỗi dòng
+            </p>
+            <textarea
+              value={pasteText}
+              onChange={e => setPasteText(e.target.value)}
+              rows={8}
+              placeholder={`Dán log vào đây. Ví dụ JSON:\n{\n  "flow_duration": 1.5,\n  "total_fwd_packets": 500,\n  "syn_count": 450,\n  ...\n}`}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-200 text-xs font-mono focus:outline-none focus:border-violet-500 resize-y"
+            />
+            <div className="flex gap-2">
+              <button onClick={() => { const f = parseLogText(pasteText); if (f) setParsedFeatures(f) }}
+                className="px-4 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs rounded-lg transition-colors">
+                Parse
+              </button>
+              {parsedFeatures && inputMode === 'paste' && (
+                <span className="text-xs text-emerald-400 flex items-center gap-1">
+                  ✓ Đã parse được 20 features
+                </span>
+              )}
+            </div>
+            {parseError && (
+              <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{parseError}</p>
+            )}
+          </div>
+        )}
+
+        {/* Mode: Upload CSV */}
+        {inputMode === 'upload' && (
+          <div className="mb-4 space-y-3">
+            <p className="text-xs text-slate-400">
+              File CSV cần có header row với tên các features (20 cột). Mỗi row là một flow để phân tích.
+            </p>
+            <input type="file" accept=".csv,.txt"
+              onChange={handleFileUpload}
+              className="text-xs text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-violet-600 file:text-white file:text-xs file:cursor-pointer hover:file:bg-violet-500"
+            />
+            {csvRows.length > 0 && (
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-emerald-400">✓ {csvRows.length} rows</span>
+                <select value={selectedRow}
+                  onChange={e => { const i = parseInt(e.target.value); setSelectedRow(i); setParsedFeatures(csvRows[i]); setXaiResult(null) }}
+                  className="px-2 py-1 text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-300">
+                  {csvRows.map((_, i) => <option key={i} value={i}>Row {i + 1}</option>)}
+                </select>
+              </div>
+            )}
+            {parseError && (
+              <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{parseError}</p>
+            )}
+          </div>
+        )}
+
+        {/* Mode: Sample */}
+        {inputMode === 'sample' && (
+          <p className="text-xs text-slate-500 mb-4">
+            Dùng mẫu tấn công DDoS sẵn có — SYN flood với 500 packets, packet_rate cao, ACK thấp.
+          </p>
+        )}
+
+        {/* Run button */}
+        <button
+          onClick={() => runExplanation(inputMode === 'sample' ? SAMPLE_ATTACK_FEATURES : parsedFeatures)}
+          disabled={xaiLoading || (inputMode !== 'sample' && !parsedFeatures)}
+          className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm rounded-lg disabled:opacity-50 transition-colors shadow-lg shadow-violet-500/20"
+        >
+          {xaiLoading ? 'Đang phân tích...' : 'Phân tích với SHAP'}
+        </button>
+
         {xaiError && (
-          <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-400 mb-4">
+          <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-400 mt-4">
             {xaiError}
           </div>
         )}
 
         {xaiResult && (
-          <div className="space-y-4">
-            <div className="flex gap-4 text-sm flex-wrap">
-              <span className="px-3 py-1 bg-violet-500/10 text-violet-400 border border-violet-500/20 rounded-full font-medium">
-                Predicted: {xaiResult.predicted_label}
+          <div className="space-y-4 mt-4">
+            <div className="flex gap-3 flex-wrap">
+              <span className={`px-3 py-1 rounded-full text-sm font-semibold border ${
+                xaiResult.predicted_label === 'Normal'
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  : 'bg-red-500/10 text-red-400 border-red-500/20'
+              }`}>
+                {xaiResult.predicted_label === 'Normal' ? '✓' : '⚠'} {xaiResult.predicted_label}
               </span>
-              <span className="px-3 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full font-medium">
+              <span className="px-3 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full text-sm font-medium">
                 Confidence: {(xaiResult.confidence * 100).toFixed(1)}%
               </span>
+              {xaiResult.probabilities && Object.entries(xaiResult.probabilities)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([cls, prob]) => (
+                  <span key={cls} className="px-3 py-1 bg-slate-800 text-slate-400 border border-slate-700 rounded-full text-xs">
+                    {cls}: {(prob * 100).toFixed(1)}%
+                  </span>
+                ))
+              }
             </div>
 
-            <h4 className="text-sm font-medium text-slate-400">Top Contributing Features (SHAP values)</h4>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={topFeaturesData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis type="number" tick={{ fontSize: 11, fill: '#64748b' }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} width={140} />
-                <Tooltip formatter={(v) => v.toFixed(4)} contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' }} />
-                <Bar dataKey="value" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <h4 className="text-sm font-medium text-slate-300">Top 5 Features ảnh hưởng đến quyết định</h4>
+            <div className="space-y-2">
+              {xaiResult.top_features?.map((f, i) => (
+                <div key={f.feature} className="flex items-center gap-3">
+                  <span className="text-xs text-slate-500 w-4">{i + 1}</span>
+                  <span className="text-xs font-mono text-slate-300 w-44 shrink-0">{f.feature}</span>
+                  <div className="flex-1 bg-slate-800 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full ${f.shap_value >= 0 ? 'bg-red-500' : 'bg-emerald-500'}`}
+                      style={{ width: `${Math.min(100, Math.abs(f.shap_value) * 300)}%` }}
+                    />
+                  </div>
+                  <span className={`text-xs font-mono w-16 text-right ${f.shap_value >= 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {f.shap_value >= 0 ? '+' : ''}{f.shap_value.toFixed(4)}
+                  </span>
+                  <span className="text-xs text-slate-500 w-20 text-right">val={f.value?.toFixed(1)}</span>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-xs text-slate-500 mt-2">
+              🔴 Giá trị dương = đẩy về phía tấn công &nbsp;|&nbsp; 🟢 Giá trị âm = đẩy về phía bình thường
+            </p>
           </div>
         )}
 
         {!xaiResult && !xaiError && (
-          <p className="text-sm text-slate-600 text-center py-8">
-            Click "Run Explanation" to analyze a sample attack prediction with SHAP
+          <p className="text-sm text-slate-600 text-center py-6">
+            {inputMode === 'sample'
+              ? 'Bấm "Phân tích với SHAP" để xem AI giải thích quyết định'
+              : inputMode === 'paste'
+              ? 'Dán log text → Parse → Phân tích với SHAP'
+              : 'Upload file CSV → Chọn row → Phân tích với SHAP'
+            }
           </p>
         )}
       </div>

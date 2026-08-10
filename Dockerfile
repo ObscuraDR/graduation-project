@@ -19,9 +19,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY backend/ ./backend/
+COPY ai/ ./ai/
+COPY data/ ./data/
 
 # Create necessary directories
-RUN mkdir -p backend/models backend/data backend/reports logs
+RUN mkdir -p backend/models data/models data/processed data/raw data/geoip backend/reports logs
 
 # Copy entrypoint script
 COPY entrypoint.sh ./

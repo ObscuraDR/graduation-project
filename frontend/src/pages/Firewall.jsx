@@ -11,6 +11,7 @@ import {
 } from '../lib/api';
 import { hasRole } from '../lib/auth';
 import { formatDatetime } from '../lib/datetime';
+import { onWebSocketMessage } from '../lib/websocket';
 import Pagination from '../components/Pagination';
 import BlockIPModal from '../components/BlockIPModal';
 
@@ -222,7 +223,7 @@ export default function Firewall() {
   }, []);
 
   // IP Blacklist functions
-  const loadBlacklist = async () => {
+  const loadBlacklist = useCallback(async () => {
     try {
       const data = await fetchBlacklist({ limit: pageSize, skip: (currentPage - 1) * pageSize });
       setBlacklist(Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []));
@@ -230,9 +231,9 @@ export default function Firewall() {
     } catch (err) {
       console.error('Failed to fetch blacklist:', err);
     }
-  };
+  }, [currentPage, pageSize]);
 
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     try {
       const data = await fetchBlockHistory({ limit: pageSize, skip: (currentPage - 1) * pageSize });
       setHistory(Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []));
@@ -240,7 +241,18 @@ export default function Firewall() {
     } catch (err) {
       console.error('Failed to fetch block history:', err);
     }
-  };
+  }, [currentPage, pageSize]);
+
+  // Real-time WebSocket listener cho tab Firewall
+  useEffect(() => {
+    const unsub = onWebSocketMessage((msg) => {
+      if (msg.type === 'firewall_block' || msg.type === 'alert') {
+        loadBlacklist();
+        loadHistory();
+      }
+    });
+    return () => unsub();
+  }, [loadBlacklist, loadHistory]);
 
   const handleUnblock = async (ip) => {
     if (window.confirm(`Bạn có chắc muốn gỡ chặn IP ${ip}?`)) {
@@ -358,7 +370,7 @@ export default function Firewall() {
     } else if (tab === 'whitelist') {
       loadWhitelist();
     }
-  }, [currentPage, pageSize, tab, loadGeoBlocks, loadWhitelist]);
+  }, [currentPage, pageSize, tab, loadBlacklist, loadHistory, loadGeoBlocks, loadWhitelist]);
 
   const handleLookup = async () => {
     if (!lookupIp.trim()) return;

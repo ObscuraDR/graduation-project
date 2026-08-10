@@ -49,7 +49,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from backend.detection_engine.predictor import FeatureContractError
-from backend.ml.xai import UnsupportedModelError, explain
+from ai.xai import UnsupportedModelError, explain
 
 logger = logging.getLogger(__name__)
 

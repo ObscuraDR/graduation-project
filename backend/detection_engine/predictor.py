@@ -28,7 +28,7 @@ class Predictor:
         self,
         model_loader: Optional[ModelLoader] = None,
         feature_extractor: Optional[FeatureExtractor] = None,
-        confidence_threshold: float = 0.75,
+        confidence_threshold: float = 0.50,
         features_path: str = "./backend/models/features.json"
     ):
         """
@@ -406,7 +406,7 @@ _predictor_instance: Optional[Predictor] = None
 def get_predictor(
     model_loader: Optional[ModelLoader] = None,
     feature_extractor: Optional[FeatureExtractor] = None,
-    confidence_threshold: float = 0.75
+    confidence_threshold: float = 0.50
 ) -> Predictor:
     """
     Get or create predictor instance

@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from backend.ml.models import EnsembleIDS, RandomForestIDS, XGBoostIDS
+from ai.models import EnsembleIDS, RandomForestIDS, XGBoostIDS
 
 # ---------------------------------------------------------------------------
 # fixtures

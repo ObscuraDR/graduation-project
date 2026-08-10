@@ -111,7 +111,7 @@ export default function Alerts() {
   const selectClass = "px-3 py-1.5 border border-slate-700 rounded-lg text-sm bg-slate-800 text-slate-300 hover:border-slate-600 focus:outline-none focus:border-blue-500 transition-colors"
 
   return (
-    <div className="h-full flex flex-col gap-4">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

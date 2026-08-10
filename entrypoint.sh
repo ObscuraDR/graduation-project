@@ -15,9 +15,9 @@ echo "Chay khoi tao du lieu va seed data..."
 python backend/database/init_db.py
 
 # Kiem tra neu thieu ML dummy model thi tu dong tao
-if [ ! -f "backend/models/ensemble.pkl" ]; then
+if [ ! -f "backend/models/ensemble.pkl" ] && [ ! -f "data/models/ensemble.pkl" ]; then
   echo "ML models chua san sang - Dang tu dong tao dummy models..."
-  python backend/ml/create_dummy_models.py
+  python ai/create_dummy_models.py
 fi
 
 echo "Khoi dong FastAPI Backend Server..."

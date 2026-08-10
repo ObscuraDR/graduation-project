@@ -6,8 +6,8 @@ pydantic-settings==2.6.1
 python-jose[cryptography]==3.3.0
 bcrypt==4.2.1
 aiosmtplib==3.0.1
-# shap cần pre-built wheel, cài riêng: pip install shap==0.52.0 --only-binary=:all:
-shap==0.52.0
+# shap package for XAI
+shap>=0.45.0
 numpy>=2.1.0
 pandas>=2.2.3
 xgboost>=2.1.3

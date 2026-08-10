@@ -29,6 +29,15 @@ export default function App() {
     const unsub = onWebSocketMessage((msg) => {
       if (msg.type === 'alert') {
         setLiveAlerts((prev) => [msg.data, ...prev].slice(0, 50))
+      } else if (msg.type === 'firewall_block') {
+        // Hiển thị toast khi IP bị auto-block
+        const blockAlert = {
+          ...msg.data,
+          attack_type: `🛡️ IP Blocked: ${msg.data.src_ip}`,
+          severity: 'high',
+          alert_id: msg.data.alert_id || `block-${Date.now()}`,
+        }
+        setLiveAlerts((prev) => [blockAlert, ...prev].slice(0, 50))
       }
     })
     return () => unsub()
@@ -49,7 +58,7 @@ export default function App() {
             <RequireAuth>
               <div className="flex min-h-screen bg-slate-950 text-slate-200">
                 <Sidebar />
-                <div className="flex-1 overflow-auto">
+                <main className="flex-1 min-w-0 overflow-auto p-6 md:p-8">
                   <Routes>
                     <Route index                      element={<Overview />} />
                     <Route path="alerts"              element={<Alerts />} />
@@ -71,7 +80,7 @@ export default function App() {
                     {/* Fallback */}
                     <Route path="*"                   element={<Navigate to="/" replace />} />
                   </Routes>
-                </div>
+                </main>
               </div>
             </RequireAuth>
           }

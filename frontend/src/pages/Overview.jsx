@@ -10,30 +10,71 @@ import { fetchAlerts, fetchDashboardStats } from '../lib/api'
 import { formatDatetime, formatChartHour } from '../lib/datetime'
 import { onWebSocketMessage } from '../lib/websocket'
 
+// Màu theo severity (cho các nơi khác dùng)
 const SEVERITY_COLORS = {
   critical: '#ef4444',
-  high: '#f59e0b',
-  medium: '#3b82f6',
-  low: '#22c55e',
-  default: '#8b5cf6',
+  high:     '#f59e0b',
+  medium:   '#3b82f6',
+  low:      '#22c55e',
+  default:  '#8b5cf6',
+}
+
+// Màu theo attack type (cho pie chart Loại tấn công)
+const ATTACK_TYPE_COLORS = {
+  DDoS:        '#ef4444',   // đỏ
+  BruteForce:  '#f59e0b',   // vàng cam
+  PortScan:    '#3b82f6',   // xanh dương
+  Botnet:      '#a855f7',   // tím
+  Abnormal:    '#f97316',   // cam
+  Normal:      '#22c55e',   // xanh lá
+  'Port Sweep':'#06b6d4',   // cyan
+  'Suspicious User Behavior': '#ec4899', // hồng
+  default:     '#64748b',   // xám
 }
 
 // Module-level cache
 let _dashboardCache = null
 let _recentAlertsCache = []
+let _selectedHoursCache = 24  // nhớ lựa chọn khi chuyển tab
 
 const TIME_RANGES = [
-  { label: '1 giờ qua',  hours: 1   },
   { label: '24 giờ qua', hours: 24  },
   { label: '3 ngày qua', hours: 72  },
   { label: '7 ngày qua', hours: 168 },
 ]
 
+// Format nhãn trục X theo khoảng thời gian
+function formatXAxisTick(timeStr, hours) {
+  if (!timeStr) return ''
+  try {
+    const d = new Date(timeStr)
+    if (isNaN(d.getTime())) return timeStr
+
+    if (hours <= 24) {
+      // 24h → hiện giờ: "10:00", "11:00"
+      return d.toLocaleTimeString('vi-VN', {
+        hour: '2-digit', minute: '2-digit',
+        timeZone: 'Asia/Ho_Chi_Minh', hour12: false
+      })
+    } else if (hours <= 72) {
+      // 3 ngày → hiện ngày + giờ: "T6 10h", "T7 14h"
+      const day = d.toLocaleDateString('vi-VN', { weekday: 'short', timeZone: 'Asia/Ho_Chi_Minh' })
+      const hour = d.toLocaleTimeString('vi-VN', { hour: '2-digit', timeZone: 'Asia/Ho_Chi_Minh', hour12: false })
+      return `${day} ${hour}`
+    } else {
+      // 7 ngày → hiện ngày trong tuần: "T2", "T3"
+      return d.toLocaleDateString('vi-VN', { weekday: 'short', timeZone: 'Asia/Ho_Chi_Minh' })
+    }
+  } catch {
+    return timeStr
+  }
+}
+
 export default function Overview() {
   const [dashboard, setDashboard] = useState(_dashboardCache)
   const [recentAlerts, setRecentAlerts] = useState(_recentAlertsCache)
   const [isRefreshing, setIsRefreshing] = useState(!_dashboardCache)
-  const [selectedHours, setSelectedHours] = useState(24)
+  const [selectedHours, setSelectedHours] = useState(_selectedHoursCache)
 
   const loadDashboard = async (hours, silent = false) => {
     if (!silent) setIsRefreshing(true)
@@ -129,7 +170,7 @@ export default function Overview() {
   const pieData = (dashboard?.threat_categories ?? []).map((t) => ({ name: t.type, value: t.count }))
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -144,6 +185,7 @@ export default function Overview() {
             onChange={e => {
               const h = parseInt(e.target.value)
               setSelectedHours(h)
+              _selectedHoursCache = h  // lưu cache
               loadDashboard(h)
             }}
             className="px-3 py-1.5 text-sm bg-slate-800 border border-slate-700 rounded-lg text-slate-300 focus:outline-none focus:border-blue-500 transition-colors"
@@ -191,11 +233,12 @@ export default function Overview() {
             <ResponsiveContainer width="100%" height={180}>
               <LineChart data={dashboard.attack_trend}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={formatChartHour} />
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={(t) => formatXAxisTick(t, selectedHours)} interval="preserveStartEnd" />
                 <YAxis tick={{ fontSize: 10, fill: '#64748b' }} allowDecimals={false} />
                 <Tooltip
-                  labelFormatter={formatChartHour}
-                  contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' }}
+                  labelFormatter={(t) => formatXAxisTick(t, selectedHours)}
+                  contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#1e293b', boxShadow: '0 4px 16px rgba(0,0,0,0.15)', fontSize: '13px' }}
+                  wrapperStyle={{ outline: 'none', zIndex: 9999 }}
                 />
                 <Line
                   type="monotone" dataKey="count" stroke="#ef4444"
@@ -222,17 +265,29 @@ export default function Overview() {
                 <PieChart>
                   <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} innerRadius={30}>
                     {pieData.map((entry, i) => (
-                      <Cell key={i} fill={SEVERITY_COLORS[entry.name] || SEVERITY_COLORS.default} />
+                      <Cell key={i} fill={ATTACK_TYPE_COLORS[entry.name] || ATTACK_TYPE_COLORS.default} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' }} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#0f172a',
+                      borderColor: '#334155',
+                      borderRadius: '10px',
+                      color: '#ffffff',
+                      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+                      padding: '8px 12px',
+                      fontSize: '13px',
+                    }}
+                    itemStyle={{ color: '#38bdf8', fontWeight: 600 }}
+                    labelStyle={{ color: '#ffffff', fontWeight: 'bold' }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
               <div className="space-y-1.5 mt-2">
                 {pieData.slice(0, 4).map((item, i) => (
                   <div key={i} className="flex items-center justify-between text-xs">
                     <span className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full" style={{ background: SEVERITY_COLORS[item.name] || SEVERITY_COLORS.default }} />
+                      <span className="w-2 h-2 rounded-full" style={{ background: ATTACK_TYPE_COLORS[item.name] || ATTACK_TYPE_COLORS.default }} />
                       <span className="text-slate-400">{item.name}</span>
                     </span>
                     <span className="font-semibold text-slate-300">{item.value}</span>

@@ -378,7 +378,7 @@ async def load_model(model_id: int, db: Session = Depends(get_db)):
         )
 
     try:
-        from backend.ml.models import RandomForestIDS, XGBoostIDS
+        from ai.models import RandomForestIDS, XGBoostIDS
 
         if model.algorithm == "RandomForest":
             ml_model = RandomForestIDS()

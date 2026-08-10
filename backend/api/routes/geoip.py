@@ -23,10 +23,16 @@ def _get_reader():
     try:
         import geoip2.database
         from pathlib import Path
-        db_path = Path("backend/data/GeoLite2-Country.mmdb")
-        if db_path.exists():
-            _reader = geoip2.database.Reader(str(db_path))
-            logger.info("GeoIP2 database loaded from %s", db_path)
+        db_paths = [
+            Path("data/geoip/GeoLite2-Country.mmdb"),
+            Path("data/GeoLite2-Country.mmdb"),
+            Path("backend/data/GeoLite2-Country.mmdb"),
+        ]
+        for db_path in db_paths:
+            if db_path.exists():
+                _reader = geoip2.database.Reader(str(db_path))
+                logger.info("GeoIP2 database loaded from %s", db_path)
+                break
     except Exception as e:
         logger.debug("geoip2 not available: %s", e)
     return _reader

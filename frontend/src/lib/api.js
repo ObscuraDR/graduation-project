@@ -278,8 +278,8 @@ export async function removeWhitelist(data) {
 }
 
 // ─── Blacklist ────────────────────────────────────────────────────────────────
-export async function fetchBlacklist() {
-  const res = await api.get('/blacklist/')
+export async function fetchBlacklist(params) {
+  const res = await api.get('/blacklist/', { params })
   return res.data
 }
 

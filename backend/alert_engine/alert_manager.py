@@ -5,6 +5,7 @@ Enhanced alert generation with severity scoring, cooldown, and correlation
 
 import logging
 import uuid
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from collections import defaultdict
@@ -32,7 +33,7 @@ class AlertManager:
     
     def __init__(
         self,
-        confidence_threshold: float = 0.75,
+        confidence_threshold: float = 0.50,
         alert_cooldown: int = 30,
         correlation_window: int = 60,
         enable_db_save: bool = True,
@@ -117,30 +118,40 @@ class AlertManager:
         if attack_type == 'Normal':
             return None
         
+        logger.info(f"[ALERT] Processing attack={attack_type} conf={confidence:.2f} severity={severity}")
+
         # Check confidence threshold
         if confidence < self.confidence_threshold:
-            logger.debug(f"Confidence below threshold: {confidence:.2f} < {self.confidence_threshold}")
+            logger.info(f"[ALERT SUPPRESSED] Confidence {confidence:.2f} < threshold {self.confidence_threshold}")
             return None
         
-        # Extract source IP
+        # Extract source & destination IP
         src_ip = flow_info.get('src_ip')
+        dst_ip = flow_info.get('dst_ip')
         if not src_ip:
-            logger.warning("Flow missing source IP")
+            logger.warning("[ALERT SUPPRESSED] Flow missing source IP")
             return None
         
+        logger.info(f"[ALERT] src_ip={src_ip} dst_ip={dst_ip} local_check={self._is_local_ip(src_ip)}")
+
+        # Nếu src_ip là IP máy chủ cục bộ nhưng dst_ip là IP ngoài, đảo sang IP ngoài (kẻ tấn công)
+        if self._is_local_ip(src_ip) and dst_ip and not self._is_local_ip(dst_ip):
+            logger.info(f"[ALERT] Swapping IP: {src_ip} -> {dst_ip}")
+            src_ip = dst_ip
+
         # Check whitelist
         if self._is_whitelisted(src_ip):
-            logger.debug(f"IP whitelisted: {src_ip}")
+            logger.info(f"[ALERT SUPPRESSED] IP whitelisted: {src_ip}")
             return None
 
         # Check blacklist (already blocked — suppress alert noise, just log)
         if self._is_blacklisted(src_ip):
-            logger.debug(f"IP already blacklisted: {src_ip}")
+            logger.info(f"[ALERT SUPPRESSED] IP already blacklisted: {src_ip}")
             return None
 
         # Check geo-block
         if self._is_geo_blocked(src_ip):
-            logger.info(f"IP geo-blocked: {src_ip}")
+            logger.info(f"[ALERT SUPPRESSED] IP geo-blocked: {src_ip}")
             self._auto_add_to_blacklist(src_ip, reason="geo-blocked", auto_blocked=True)
             return None
 
@@ -148,13 +159,9 @@ class AlertManager:
         if self._is_geo_watched(src_ip) and severity == 'low':
             severity = 'medium'
 
-        # [NEW] Check Threat Intelligence (Placeholder for Stage 2)
-        # if self._check_external_intelligence(src_ip):
-        #     severity = 'critical' # Tăng mức độ nếu IP có danh tiếng xấu toàn cầu
-
-        # Check cooldown (Chỉ áp dụng cho việc tạo Alert record, không chặn logic xử lý)
-        # Tuy nhiên, nếu IP đã bị Blacklisted thì không cần tạo alert mới gây nhiễu
-        if src_ip in self.blacklist or self._is_in_cooldown(src_ip):
+        # Check cooldown
+        if self._is_in_cooldown(src_ip):
+            logger.info(f"[ALERT SUPPRESSED] IP {src_ip} in cooldown")
             return None
 
         # Apply correlation logic
@@ -209,9 +216,9 @@ class AlertManager:
         except Exception as e:
             logger.debug("TI enrichment skipped: %s", e)
 
-        # Auto-block if threshold exceeded
+        # Auto-block if threshold exceeded or for HIGH/CRITICAL severity
         if self.auto_block_enabled:
-            self._check_auto_block(src_ip, attack_type)
+            self._check_auto_block(src_ip, attack_type, adjusted_severity)
 
         # Save to database
         if self.enable_db_save:
@@ -240,6 +247,21 @@ class AlertManager:
 
         return alert
     
+    def _is_local_ip(self, ip_address: str) -> bool:
+        """Kiểm tra xem địa chỉ IP có phải là IP máy chủ nội bộ hay không."""
+        if not ip_address:
+            return False
+        if ip_address in ("127.0.0.1", "::1", "0.0.0.0", "localhost"):
+            return True
+        try:
+            import socket
+            hostname = socket.gethostname()
+            local_ips = set(socket.gethostbyname_ex(hostname)[2])
+            local_ips.add("127.0.0.1")
+            return ip_address in local_ips
+        except Exception:
+            return False
+
     def _is_whitelisted(self, ip_address: str) -> bool:
         return ip_address in self.whitelist
 
@@ -272,10 +294,8 @@ class AlertManager:
 
     def _auto_add_to_blacklist(self, ip_address: str, reason: str = "auto-blocked", auto_blocked: bool = True, duration_seconds: Optional[int] = 3600):
         """Add IP to blacklist in-memory and DB (non-blocking best-effort)."""
-        if ip_address in self.blacklist:
-            return
-        self.blacklist.add(ip_address)
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=duration_seconds) if duration_seconds else None
+        db_created_or_updated = False
         
         try:
             db = SessionLocal()
@@ -287,24 +307,69 @@ class AlertManager:
                         reason=reason, auto_blocked=auto_blocked,
                         expires_at=expires_at
                     )
+                    db_created_or_updated = True
+                else:
+                    exp_tz = existing.expires_at.replace(tzinfo=timezone.utc) if existing.expires_at and existing.expires_at.tzinfo is None else existing.expires_at
+                    if not existing.is_active or (exp_tz and exp_tz <= datetime.now(timezone.utc)):
+                        existing.is_active = True
+                        existing.reason = reason
+                        existing.auto_blocked = auto_blocked
+                        existing.expires_at = expires_at
+                        existing.created_at = datetime.now(timezone.utc)
+                        db.commit()
+                        db_created_or_updated = True
             finally:
                 db.close()
         except Exception as e:
             logger.error(f"Failed to persist auto-block for {ip_address}: {e}")
 
-    def _check_auto_block(self, src_ip: str, attack_type: str):
-        """Auto-block IP when alert count exceeds threshold within correlation window."""
+        # Update in-memory set & apply OS Firewall rule
+        if ip_address not in self.blacklist or db_created_or_updated:
+            self.blacklist.add(ip_address)
+            try:
+                from backend.scripts.firewall_manager import get_firewall_manager
+                fw = get_firewall_manager()
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(fw.block_ip(ip_address, reason=reason))
+                except RuntimeError:
+                    asyncio.run(fw.block_ip(ip_address, reason=reason))
+            except Exception as e:
+                logger.error(f"Failed to apply OS firewall block for {ip_address}: {e}")
+
+        # Broadcast WebSocket event for real-time UI update on Firewall tab
+        if self.broadcast_bridge is not None:
+            try:
+                self.broadcast_bridge.enqueue_alert({
+                    "alert_id": f"block-{ip_address}-{int(datetime.now(timezone.utc).timestamp())}",
+                    "type": "firewall_block",
+                    "src_ip": ip_address,
+                    "attack_type": "AutoBlocked",
+                    "severity": "high",
+                    "confidence": 1.0,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "status": "blocked",
+                    "reason": reason,
+                    "expires_at": expires_at.isoformat() if expires_at else None,
+                })
+                logger.info("Broadcast firewall_block event for %s", ip_address)
+            except Exception as e:
+                logger.debug("Failed to broadcast firewall block event: %s", e)
+
+    def _check_auto_block(self, src_ip: str, attack_type: str, severity: str = "high"):
+        """Auto-block IP when alert count exceeds threshold or immediately for HIGH/CRITICAL attacks."""
         current_time = datetime.now(timezone.utc)
         window_start = current_time - timedelta(seconds=self.correlation_window)
         recent = [
             a for a in self.attack_patterns.get(src_ip, [])
             if datetime.fromisoformat(a['timestamp']) >= window_start
         ]
-        if len(recent) >= self.auto_block_threshold:
-            logger.warning(f"Auto-blocking {src_ip}: {len(recent)} alerts in {self.correlation_window}s")
+        # Chặn ngay lập tức nếu severity là 'critical' hoặc 'high', hoặc số lượng cảnh báo vượt ngưỡng
+        if severity.lower() in ('critical', 'high') or len(recent) >= self.auto_block_threshold:
+            logger.warning(f"Auto-blocking {src_ip}: severity={severity}, {len(recent)} alerts in {self.correlation_window}s")
             self._auto_add_to_blacklist(
                 src_ip,
-                reason=f"Auto-blocked: {len(recent)} {attack_type} alerts in {self.correlation_window}s",
+                reason=f"Auto-blocked ({severity}): {attack_type} attack detected",
                 auto_blocked=True,
             )
     
@@ -618,7 +683,7 @@ _alert_manager_instance: Optional[AlertManager] = None
 
 
 def get_alert_manager(
-    confidence_threshold: float = 0.75,
+    confidence_threshold: float = 0.50,
     alert_cooldown: int = 30,
     correlation_window: int = 60
 ) -> AlertManager:

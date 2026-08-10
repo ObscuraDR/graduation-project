@@ -14,10 +14,17 @@ const PROTOCOL_COLORS = {
 }
 
 const CHART_TOOLTIP_STYLE = {
-  background: '#0f172a',
-  border: '1px solid #334155',
-  borderRadius: '8px',
-  color: '#e2e8f0',
+  background: '#1e293b',
+  border: '1px solid #475569',
+  borderRadius: '10px',
+  color: '#f1f5f9',
+  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+  fontSize: '13px',
+}
+
+const CHART_WRAPPER_STYLE = {
+  outline: 'none',
+  zIndex: 9999,
 }
 
 // Module-level cache
@@ -189,6 +196,7 @@ export default function Network() {
                 <Tooltip
                   formatter={(v, n) => [`${v} flows`, String(n).toUpperCase()]}
                   contentStyle={CHART_TOOLTIP_STYLE}
+                  wrapperStyle={CHART_WRAPPER_STYLE}
                 />
               </PieChart>
             </ResponsiveContainer>

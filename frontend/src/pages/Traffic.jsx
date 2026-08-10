@@ -17,14 +17,35 @@ const PROTOCOL_COLORS = {
 }
 
 const CHART_STYLE = {
-  background: '#0f172a',
-  border: '1px solid #1e293b',
-  borderRadius: '8px',
-  color: '#e2e8f0',
+  backgroundColor: '#0f172a',
+  borderColor: '#334155',
+  borderRadius: '10px',
+  color: '#ffffff',
+  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+  padding: '8px 12px',
+  fontSize: '13px',
 }
 
-// Module-level cache
+const CHART_ITEM_STYLE = {
+  color: '#38bdf8',
+  fontWeight: 600,
+}
+
+const CHART_LABEL_STYLE = {
+  color: '#ffffff',
+  fontWeight: 'bold',
+}
+
+const CHART_WRAPPER_STYLE = {
+  outline: 'none',
+  zIndex: 9999,
+}
+
 let _trafficCache = null
+let _interfacesCache = []
+let _selectedIfaceCache = ''
+let _refreshIntervalCache = 5   // nhớ interval khi chuyển tab
+let _filterProtoCache = ''      // nhớ filter protocol khi chuyển tab
 
 export default function Traffic() {
   const [flows, setFlows] = useState(_trafficCache?.flows || [])
@@ -32,24 +53,37 @@ export default function Traffic() {
   const [stats, setStats] = useState(_trafficCache?.stats || null)
   const [loading, setLoading] = useState(!_trafficCache)
   const [autoRefresh, setAutoRefresh] = useState(true)
-  const [refreshInterval, setRefreshInterval] = useState(5)
-  const [filterProto, setFilterProto] = useState('')
+  const [refreshInterval, setRefreshInterval] = useState(_refreshIntervalCache)
+  const [filterProto, setFilterProto] = useState(_filterProtoCache)
   const [trafficHistory, setTrafficHistory] = useState([])
 
   // ── Sniffer controls ──────────────────────────────────────────────────────
   const [snifferRunning, setSnifferRunning] = useState(false)
   const [snifferLoading, setSnifferLoading] = useState(false)
   const [snifferError, setSnifferError] = useState(null)
-  const [interfaces, setInterfaces] = useState([])
-  const [selectedIface, setSelectedIface] = useState('')
+  const [interfaces, setInterfaces] = useState(_interfacesCache)
+  const [selectedIface, setSelectedIface] = useState(_selectedIfaceCache)
 
-  // Load available interfaces on mount
+  // Load available interfaces on mount — dùng cache nếu đã có
   useEffect(() => {
+    if (_interfacesCache.length > 0) return  // đã có cache → không fetch lại
+
     fetchInterfaces()
       .then(data => {
         const ifaces = data.interfaces || []
+        _interfacesCache = ifaces
+
+        // Ưu tiên chọn Wi-Fi, nếu không có thì chọn cái đầu tiên
+        const preferred = ifaces.find(i =>
+          i.toLowerCase().includes('wi-fi') ||
+          i.toLowerCase().includes('wifi') ||
+          i.toLowerCase().includes('wlan') ||
+          i.toLowerCase().includes('eth0')
+        ) || ifaces[0] || ''
+
+        _selectedIfaceCache = preferred
         setInterfaces(ifaces)
-        if (ifaces.length > 0) setSelectedIface(ifaces[0])
+        setSelectedIface(preferred)
       })
       .catch(() => {})
   }, [])
@@ -198,7 +232,11 @@ export default function Traffic() {
         <div className="flex items-center gap-2">
           {autoRefresh && (
             <select value={refreshInterval}
-              onChange={e => setRefreshInterval(parseInt(e.target.value))}
+              onChange={e => {
+                const v = parseInt(e.target.value)
+                setRefreshInterval(v)
+                _refreshIntervalCache = v
+              }}
               className="px-2 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-300">
               <option value={5}>5s</option>
               <option value={10}>10s</option>
@@ -235,7 +273,10 @@ export default function Traffic() {
             <ChevronDown className="w-4 h-4 text-slate-500" />
             <select
               value={selectedIface}
-              onChange={e => setSelectedIface(e.target.value)}
+              onChange={e => {
+                setSelectedIface(e.target.value)
+                _selectedIfaceCache = e.target.value  // lưu cache
+              }}
               disabled={snifferRunning || snifferLoading}
               className="px-3 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-300 disabled:opacity-50 max-w-xs"
             >
@@ -310,7 +351,7 @@ export default function Traffic() {
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
               <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#64748b' }} />
               <YAxis tick={{ fontSize: 10, fill: '#64748b' }} />
-              <Tooltip contentStyle={CHART_STYLE} />
+              <Tooltip contentStyle={CHART_STYLE} itemStyle={CHART_ITEM_STYLE} labelStyle={CHART_LABEL_STYLE} wrapperStyle={CHART_WRAPPER_STYLE} />
               <Line type="monotone" dataKey="flows" stroke="#22c55e" strokeWidth={2} dot={false} name="Flows" />
             </LineChart>
           </ResponsiveContainer>
@@ -329,7 +370,7 @@ export default function Traffic() {
                       <Cell key={i} fill={PROTOCOL_COLORS[e.name] || '#64748b'} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={CHART_STYLE} formatter={(v, n) => [v, String(n).toUpperCase()]} />
+                  <Tooltip contentStyle={CHART_STYLE} itemStyle={CHART_ITEM_STYLE} labelStyle={CHART_LABEL_STYLE} wrapperStyle={CHART_WRAPPER_STYLE} formatter={(v, n) => [v, String(n).toUpperCase()]} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="space-y-1 mt-1">
@@ -390,7 +431,7 @@ export default function Traffic() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                 <XAxis dataKey="port" tick={{ fontSize: 10, fill: '#64748b' }} />
                 <YAxis tick={{ fontSize: 10, fill: '#64748b' }} />
-                <Tooltip contentStyle={CHART_STYLE} />
+                <Tooltip contentStyle={CHART_STYLE} itemStyle={CHART_ITEM_STYLE} labelStyle={CHART_LABEL_STYLE} wrapperStyle={CHART_WRAPPER_STYLE} />
                 <Bar dataKey="count" fill="#8b5cf6" radius={[3, 3, 0, 0]} name="Flows" />
               </BarChart>
             </ResponsiveContainer>
@@ -406,7 +447,7 @@ export default function Traffic() {
           </h3>
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-slate-500" />
-            <select value={filterProto} onChange={e => setFilterProto(e.target.value)}
+            <select value={filterProto} onChange={e => { setFilterProto(e.target.value); _filterProtoCache = e.target.value }}
               className="px-2 py-1 text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-300">
               <option value="">All Protocols</option>
               <option value="tcp">TCP</option>

@@ -26,12 +26,35 @@ export default function UserManagement() {
   };
 
   useEffect(() => {
-    if (!hasRole(['admin'])) {
-      setError('Bạn không có quyền truy cập trang này.');
-      setLoading(false);
-      return;
+    // Kiểm tra role và load users
+    const checkAndLoad = () => {
+      if (!hasRole(['admin'])) {
+        setError('Bạn không có quyền truy cập trang này.');
+        setLoading(false);
+        return;
+      }
+      fetchUsers();
+    };
+
+    if (getUser()) {
+      // User đã có sẵn trong localStorage → kiểm tra ngay
+      checkAndLoad();
+    } else {
+      // Chờ RequireAuth phát event 'auth:restored' sau khi restore session từ cookie
+      const handler = () => checkAndLoad();
+      window.addEventListener('auth:restored', handler, { once: true });
+
+      // Fallback timeout 2s phòng trường hợp event không đến
+      const timeout = setTimeout(() => {
+        window.removeEventListener('auth:restored', handler);
+        checkAndLoad();
+      }, 2000);
+
+      return () => {
+        window.removeEventListener('auth:restored', handler);
+        clearTimeout(timeout);
+      };
     }
-    fetchUsers();
   }, []);
 
   const fetchUsers = async () => {
@@ -117,7 +140,7 @@ export default function UserManagement() {
   const inputClass = "w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none";
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20">

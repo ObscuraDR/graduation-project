@@ -1,4 +1,4 @@
-﻿﻿import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { Play, Square, Key, Wifi, RefreshCw, Shield, Globe, Ban, Terminal, Plus } from 'lucide-react'
 import {
   fetchSnifferStatus, startSniffer, stopSniffer, fetchHealthDetailed,
@@ -143,20 +143,20 @@ export default function Settings() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900">Cài đặt Nâng cao</h1>
+    <div className="space-y-6 max-w-4xl mx-auto">
+      <h1 className="text-2xl font-bold text-slate-100">Cài đặt Nâng cao</h1>
 
       {message && (
-        <div className={`p-3 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+        <div className={`p-3 rounded-lg text-sm ${message.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/10 text-red-400 border border-red-500/30'}`}>
           {message.text}
         </div>
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
+      <div className="flex gap-2 border-b border-slate-800/80 pb-1">
         {TABS.map((t) => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-all rounded-t-lg ${tab === t ? 'border-blue-500 text-blue-400 bg-blue-500/10' : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'}`}>
             {t}
           </button>
         ))}

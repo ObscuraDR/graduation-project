@@ -6,7 +6,7 @@
 #             sudo ./start_kali.sh attack  → chạy demo tấn công
 # ============================================================================
 
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 VENV="$PROJECT_DIR/.venv/bin/activate"
 LOG_DIR="$PROJECT_DIR/logs"
 ACTION="${1:-start}"

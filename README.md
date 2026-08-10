@@ -30,64 +30,73 @@ cd frontend && npm install && npm run dev
 ## Cấu trúc dự án
 
 ```
-z-sentinel-ids/
+graduation-project/
 │
-├── backend/                       ← Toàn bộ Python backend + ML
-│   ├── main.py                    — FastAPI entry point
-│   ├── config.py                  — Settings & env vars
-│   ├── alembic/                   — Database migrations (Alembic)
-│   ├── pipeline/                  — Pipeline coordinator (orchestration)
-│   ├── capture_engine/            — Packet capture (Scapy)
-│   ├── flow_engine/               — Flow aggregation (5-tuple)
-│   ├── feature_engine/            — Feature extraction (20 features)
-│   ├── detection_engine/          — ML inference + model loading
-│   ├── alert_engine/              — Alert generation & correlation
-│   ├── api/                       — HTTP routes, WebSocket, middleware
-│   ├── database/                  — PostgreSQL data access and models
-│   ├── cache/                     — In-memory cache wrapper
-│   ├── notifications/             — Email service (SMTP)
-│   ├── monitoring/                — Prometheus metrics
-│   ├── ml/                        — ML training & XAI scripts
-│   ├── tests/                     — Pytest test suite
-│   ├── models/                    — ML artifacts (.pkl, features.json)
-│   ├── data/                      — Training data (CICIDS2017)
-│   ├── reports/                   — Generated training reports
-│   ├── scripts/                   — Utility scripts (validate, train, demo)
-│   └── loadtests/                 — Locust load tests
-│
-├── frontend/                      ← React dashboard
+├── frontend/                      ← React Dashboard application (Vite, Tailwind, Recharts)
 │   ├── src/
-│   │   ├── pages/                 — Overview, Alerts, Traffic, Network, AI Insights, Settings
-│   │   ├── components/            — Layout, StatCard, SeverityBadge, AlertDetailModal, ConfusionMatrix
-│   │   └── lib/                   — API client, WebSocket client
+│   ├── public/
 │   ├── package.json
-│   ├── Dockerfile                 — Multi-stage build (node → nginx)
-│   └── nginx.conf                 — SPA routing + API proxy
+│   └── vite.config.js
 │
-├── docs/                          ← Toàn bộ tài liệu
-│   ├── README.md                  — Index/mục lục
-│   ├── ENGINEERING_REBUILD_GUIDE.md  — ⭐ Guide chính (135KB)
-│   ├── api/                       — API documentation
-│   ├── architecture/              — Architecture, features, security
-│   ├── machine_learning/          — ML pipeline, training guide
-│   ├── operations/                — Commands, deployment, troubleshooting
-│   └── thesis_reports/            — Audit, demo checklist, slides
+├── backend/                       ← Core FastAPI Backend API & Services
+│   ├── main.py                    — Entry point FastAPI application
+│   ├── config.py                  — Operational configuration & settings
+│   ├── alembic/                   — Database schema migration files
+│   ├── api/                       — REST API endpoints & WebSocket handlers
+│   ├── database/                  — PostgreSQL ORM models & data access
+│   ├── detection_engine/          — Rule engine & predictor integration
+│   ├── feature_engine/            — Network packet feature extractor
+│   ├── flow_engine/               — 5-tuple flow aggregator
+│   ├── alert_engine/              — Real-time alert processing
+│   ├── pipeline/                  — Real-time data processing pipeline
+│   ├── notifications/             — Multi-channel notifications (SMTP, Discord, Telegram)
+│   ├── monitoring/                — Metrics & health checks
+│   └── tests/                     — Pytest test suite
 │
-├── logs/                          ← Runtime logs (gitignored)
+├── ai/                            ← AI & Machine Learning Module
+│   ├── models.py                  — Model architectures (RandomForest, XGBoost, Ensemble)
+│   ├── lstm_model.py              — Sequential LSTM model architecture
+│   ├── inference.py               — Real-time ML inference pipeline
+│   ├── training.py                — Model training pipeline
+│   ├── train_flow_model.py        — Flow-level model training entrypoint
+│   ├── xai.py                     — Explainable AI engine (SHAP / LIME explanations)
+│   ├── create_dummy_models.py     — Model initialization utility
+│   └── generate_training_data.py  — Synthetic training data generation
 │
-├── docker-compose.yml             — PostgreSQL + Backend + Dashboard + Nginx
-├── Dockerfile                     — Backend image
-├── requirements.txt               — Python dependencies
-├── pytest.ini                     — Test configuration
-├── .env.example                   — Environment template
-├── .gitignore
-└── README.md                      — File này
+├── data/                          ← Datasets & Data Storage
+│   ├── raw/                       — Raw traffic datasets (CICIDS2017)
+│   ├── processed/                 — Preprocessed datasets (cicids2017_processed.csv)
+│   ├── geoip/                     — MaxMind GeoIP database (GeoLite2-Country.mmdb)
+│   └── models/                    — Trained model binary artifacts (.pkl, .h5)
+│
+├── docs/                          ← Project Documentation
+│   ├── architecture/              — Architectural guides & database consolidation notes
+│   ├── setup/                     — Migration guides & environment configuration
+│   └── checklists/                — System verification & demo checklists
+│
+├── scripts/                       ← Utility & Automation Scripts
+│   ├── startup/                   — Startup scripts (run_local.ps1, start.ps1, start.sh)
+│   ├── demo/                      — Attack & firewall demo scripts
+│   ├── db/                        — Database indexing & maintenance scripts
+│   └── verification/              — Log & alert bridge verification scripts
+│
+├── docker-compose.yml             — PostgreSQL + Backend + Dashboard + Nginx orchestration
+├── Dockerfile                     — Backend container image build configuration
+├── entrypoint.sh                  — Container initialization & startup script
+├── requirements.txt               — Python package dependencies
+├── pytest.ini                     — Test suite configuration
+├── .env.example                   — System environment variables template
+└── README.md                      — Project overview and quickstart guide
 ```
 
 **Nguyên tắc tổ chức:**
 
-- `backend/` chứa **TẤT CẢ** Python code, ML artifacts, data, scripts liên quan đến backend
-- `frontend/` chứa **TẤT CẢ** React code, không tương tác trực tiếp với filesystem backend
+- `frontend/`: Giao diện React Dashboard (Vite, TailwindCSS, Recharts).
+- `backend/`: Core REST API Server, WebSocket, Database, Alert & Capture Engine.
+- `ai/`: Các mô hình Machine Learning, Deep Learning, Inference Pipeline & XAI.
+- `data/`: Lưu trữ dữ liệu huấn luyện (raw, processed) và cơ sở dữ liệu GeoIP.
+- `docs/`: Tập trung toàn bộ tài liệu kiến trúc, hướng dẫn triển khai và checklist.
+- `scripts/`: Chứa kịch bản tự động hóa khởi chạy, kiểm thử và demo hệ thống.
 - `docs/` chứa **TẤT CẢ** tài liệu (Markdown)
 - Root chỉ chứa orchestration files (Docker, configs, README)
 
