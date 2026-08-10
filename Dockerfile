@@ -29,6 +29,10 @@ RUN mkdir -p backend/models data/models data/processed data/raw data/geoip backe
 COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
+# Copy entrypoint script
+COPY entrypoint.sh ./
+RUN chmod +x entrypoint.sh
+
 # Expose port
 EXPOSE 8000
 

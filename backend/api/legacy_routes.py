@@ -533,6 +533,34 @@ async def delete_whitelist_legacy(whitelist_id: int, db: Session = Depends(get_d
 
 # ==================== Statistics Routes ====================
 
+@stats_router.post("/alert-engine/config")
+async def configure_alert_engine(
+    alert_cooldown: Optional[int] = None,
+    auto_block_threshold: Optional[int] = None,
+    confidence_threshold: Optional[float] = None,
+):
+    """
+    POST /api/stats/alert-engine/config — Điều chỉnh AlertManager tại runtime.
+    Dùng cho demo: hạ cooldown và threshold để kích hoạt auto-block nhanh hơn.
+    """
+    am = alert_manager
+    changes = {}
+    if alert_cooldown is not None:
+        am.alert_cooldown = alert_cooldown
+        # Reset in-memory cooldown history ngay
+        am.alert_history.clear()
+        from backend.cache.redis_cache import get_cache
+        get_cache().clear_alert_cooldown()
+        changes["alert_cooldown"] = alert_cooldown
+    if auto_block_threshold is not None:
+        am.auto_block_threshold = auto_block_threshold
+        changes["auto_block_threshold"] = auto_block_threshold
+    if confidence_threshold is not None:
+        am.confidence_threshold = confidence_threshold
+        changes["confidence_threshold"] = confidence_threshold
+    return {"status": "updated", "changes": changes}
+
+
 @stats_router.get("/alert-engine")
 async def get_alert_manager_stats():
     """Get alert manager statistics (in-memory engine state)"""

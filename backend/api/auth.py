@@ -103,6 +103,7 @@ class UserInfo(BaseModel):
     username: str
     email: Optional[str] = None
     role: str
+    created_at: Optional[str] = None
 
 
 class TokenResponse(BaseModel):
@@ -396,7 +397,8 @@ async def list_users(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Không có quyền truy cập")
     
     users = UserRepository.get_all(db)
-    return [UserInfo(id=u.id, username=u.username, email=u.email, role=u.role) for u in users]
+    return [UserInfo(id=u.id, username=u.username, email=u.email, role=u.role,
+                     created_at=u.created_at.isoformat() if u.created_at else None) for u in users]
 
 
 @auth_router.post("/users", response_model=UserInfo, status_code=status.HTTP_201_CREATED)

@@ -35,7 +35,14 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 
 import httpx
-import psutil
+
+# psutil optional — Android/Termux không hỗ trợ build
+try:
+    import psutil
+    _HAS_PSUTIL = True
+except ImportError:
+    psutil = None  # type: ignore
+    _HAS_PSUTIL = False
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -163,11 +170,15 @@ DVWA_LOGIN_FAIL_WINDOW_SECONDS = 60
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def get_system_stats() -> dict:
-    """Thu thập metrics hệ thống, xử lý gracefully khi thiếu quyền."""
+    """Thu thập metrics hệ thống, xử lý gracefully khi thiếu quyền hoặc thiếu psutil."""
     # CPU
-    try:
-        cpu = psutil.cpu_percent(interval=1)
-    except Exception:
+    cpu = 0.0
+    if _HAS_PSUTIL:
+        try:
+            cpu = psutil.cpu_percent(interval=1)
+        except Exception:
+            pass
+    if cpu == 0.0:
         try:
             with open('/proc/stat', 'r') as f:
                 line = f.readline()
@@ -178,9 +189,13 @@ def get_system_stats() -> dict:
             cpu = 0.0
 
     # RAM
-    try:
-        ram = psutil.virtual_memory().percent
-    except Exception:
+    ram = 0.0
+    if _HAS_PSUTIL:
+        try:
+            ram = psutil.virtual_memory().percent
+        except Exception:
+            pass
+    if ram == 0.0:
         try:
             with open('/proc/meminfo', 'r') as f:
                 lines = f.readlines()
@@ -196,12 +211,15 @@ def get_system_stats() -> dict:
             ram = 0.0
 
     # Disk
+    disk = 0.0
     disk_path = 'C:\\' if platform.system() == 'Windows' else '/'
-    try:
-        disk = psutil.disk_usage(disk_path).percent
-    except Exception:
+    if _HAS_PSUTIL:
         try:
-            import subprocess
+            disk = psutil.disk_usage(disk_path).percent
+        except Exception:
+            pass
+    if disk == 0.0:
+        try:
             out = subprocess.check_output(['df', '-h', '/'], text=True).splitlines()
             disk = float(out[1].split()[4].replace('%', '')) if len(out) > 1 else 0.0
         except Exception:
@@ -768,6 +786,8 @@ def scan_web_attacks(log_path: str) -> Optional[Dict]:
 
 def scan_network_anomaly() -> Optional[Dict]:
     """Phát hiện lượng kết nối SYN bất thường."""
+    if not _HAS_PSUTIL:
+        return None
     try:
         conns = psutil.net_connections(kind='tcp')
         syn_sent  = sum(1 for c in conns if c.status == 'SYN_SENT')
